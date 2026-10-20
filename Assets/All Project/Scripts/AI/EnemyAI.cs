@@ -8,6 +8,14 @@ namespace ZharkoeLeto44.AI
     [DisallowMultipleComponent]
     public sealed class EnemyAI : MonoBehaviour
     {
+        private enum SquadMoveKind
+        {
+            None,
+            Sidestep,
+            Adjust,
+            Bypass
+        }
+
         [Header("References")]
         [SerializeField] private Transform eyePoint;
         [SerializeField] private HitscanWeapon weapon;
@@ -57,6 +65,32 @@ namespace ZharkoeLeto44.AI
                  "на дистанции — стоит и стреляет. Назад/вбок в бою не уходит.")]
         [SerializeField, Min(1f)] private float preferredCombatDistance = 7f;
         [SerializeField, Min(1f)] private float maximumCombatDistance = 38f;
+
+        [Header("Squad (открытое поле)")]
+        [Tooltip("Отрядная логика: дистанции между союзниками, якорь, фланги " +
+                 "и асимметричный обход препятствий. Выключи для одиночного боя.")]
+        [SerializeField] private bool useSquadTactics = true;
+        [Tooltip("Радиус, в котором солдат знает о союзниках, м.")]
+        [SerializeField, Min(1f)] private float squadAwarenessRadius = 25f;
+        [Tooltip("Минимальная дистанция до союзника, м. Ближе — короткий шаг в сторону.")]
+        [SerializeField, Min(0.5f)] private float squadMinimumSpacing = 5f;
+        [Tooltip("Комфортная дистанция до союзников, м (мин–макс).")]
+        [SerializeField] private Vector2 squadComfortSpacing = new(6.5f, 8f);
+        [Tooltip("Максимальное смещение на месте для правки позиции, м.")]
+        [SerializeField, Min(0f)] private float squadMicroAdjustDistance = 1.5f;
+        [Tooltip("Короткий рывок при обходе/поиске угла, м (мин–макс).")]
+        [SerializeField] private Vector2 squadBypassDistance = new(3f, 6f);
+        [Tooltip("Дальше этой дистанции до игрока отряд переходит к преследованию, м.")]
+        [SerializeField, Min(5f)] private float squadPursuitDistance = 33f;
+        [Tooltip("Сколько секунд держать бой, если игрок пропал из виду, прежде чем " +
+                 "начать преследование. Сек.")]
+        [SerializeField, Min(0f)] private float squadLostSightPursuitDelay = 2f;
+        [Tooltip("Сколько стоять после начала стрельбы, прежде чем менять позицию. Сек.")]
+        [SerializeField, Min(0f)] private float squadFireAnchorDuration = 1.75f;
+        [Tooltip("Множитель скорости осторожного преследования.")]
+        [SerializeField, Range(0.5f, 1f)] private float squadPursuitSpeedScale = 0.9f;
+        [Tooltip("Сколько секунд помнить выбранную сторону обхода, сек.")]
+        [SerializeField, Min(0.5f)] private float squadSideCommitDuration = 5f;
 
         [Header("Решительность в бою")]
         [Tooltip("Как часто пересматривать решение подойти/стоять, сек. " +
@@ -152,6 +186,32 @@ namespace ZharkoeLeto44.AI
         public HitscanWeapon Weapon => weapon;
         public EnemyAnimator EnemyAnimator => enemyAnimator;
 
+        internal float SquadAwarenessRadius => squadAwarenessRadius;
+        internal float SquadMinimumSpacing => squadMinimumSpacing;
+        internal float SquadComfortMin => Mathf.Max(squadMinimumSpacing, squadComfortSpacing.x);
+        internal float SquadMicroAdjustDistance => squadMicroAdjustDistance;
+        internal float SquadBypassMinDistance => Mathf.Max(0.5f,
+            Mathf.Min(squadBypassDistance.x, squadBypassDistance.y));
+        internal float SquadBypassMaxDistance => Mathf.Max(SquadBypassMinDistance,
+            Mathf.Max(squadBypassDistance.x, squadBypassDistance.y));
+        internal Transform SquadTarget => _target;
+        internal Transform SquadEye => eyePoint;
+        internal EnemyMotor Motor => _motor;
+        internal Team SquadTeam => _health != null ? _health.Team : enemyTeam;
+        internal bool IsSquadAlive => _health != null && _health.IsAlive && State != EnemyState.Dead;
+        internal int SquadSide => _squadSide;
+        internal float SquadSideUntil => _squadSideUntil;
+
+        private float SquadCombatEnterDistance => useSquadTactics
+            ? Mathf.Min(maximumCombatDistance,
+                Mathf.Max(preferredCombatDistance, squadPursuitDistance - 3f))
+            : maximumCombatDistance;
+
+        private float SquadCombatExitDistance => Mathf.Max(SquadCombatEnterDistance + 1f,
+            Mathf.Min(squadPursuitDistance, maximumCombatDistance + 5f));
+
+        internal static List<EnemyAI> RegisteredSoldiers => s_soldiers;
+
         // ДЫРА: Shoot-триггер дёргался на КАЖДЫЙ выстрел (~8/сек при 500 RPM) и забивал
         // Reload/Hit. Теперь legacy-триггеры тоже троттлятся, а основной путь — EnemyAnimator.
         private float _nextLegacyShootAnimTime;
@@ -195,6 +255,15 @@ namespace ZharkoeLeto44.AI
         private float _nextCombatDecisionTime;
         private float _standFireUntil;
         private float _approachUntil;
+        private float _fireAnchorUntil;
+        private SquadMoveKind _squadMoveKind;
+        private Vector3 _squadMovePoint;
+        private float _squadMoveUntil;
+        private float _nextSquadSidestepTime;
+        private float _nextSquadAdjustTime;
+        private float _nextSquadBypassTime;
+        private int _squadSide;
+        private float _squadSideUntil;
         private float _nextDiagTime;
         private string _lastLosBlocker;
         private string _lastRejectNote;
@@ -227,6 +296,18 @@ namespace ZharkoeLeto44.AI
         private readonly Collider[] _eyeBuffer = new Collider[4];
 
         private static readonly HashSet<CharacterHealth> s_characters = new();
+        private static readonly List<EnemyAI> s_soldiers = new();
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetSoldierRegistry() => s_soldiers.Clear();
+
+        private void RegisterSoldier()
+        {
+            if (!s_soldiers.Contains(this)) s_soldiers.Add(this);
+        }
+
+        private void UnregisterSoldier() => s_soldiers.Remove(this);
+
         public static void RegisterCharacter(CharacterHealth character)
         {
             if (character != null) s_characters.Add(character);
@@ -298,11 +379,16 @@ namespace ZharkoeLeto44.AI
         {
             if (_health == null) _health = GetComponent<CharacterHealth>();
             if (_health == null) return;
+            RegisterSoldier();
             _health.Damaged += OnDamaged;
             _health.Died += OnDied;
             NoiseSystem.NoiseCreated += OnNoiseCreated;
             SubscribeWeapon(weapon);
             State = EnemyState.Patrol;
+            _squadMoveKind = SquadMoveKind.None;
+            _fireAnchorUntil = 0f;
+            _squadSide = 0;
+            _squadSideUntil = 0f;
         }
 
         private void Start()
@@ -319,6 +405,12 @@ namespace ZharkoeLeto44.AI
             if (maximumBurstSize < minimumBurstSize) maximumBurstSize = minimumBurstSize;
             if (maximumBurstPause < minimumBurstPause) maximumBurstPause = minimumBurstPause;
             if (wanderWaitMax < wanderWaitMin) wanderWaitMax = wanderWaitMin;
+            if (squadComfortSpacing.y < squadComfortSpacing.x)
+                squadComfortSpacing.y = squadComfortSpacing.x;
+            if (squadComfortSpacing.x < squadMinimumSpacing)
+                squadComfortSpacing.x = squadMinimumSpacing;
+            if (squadBypassDistance.y < squadBypassDistance.x)
+                squadBypassDistance.y = squadBypassDistance.x;
         }
 
         public void ConfigureForWizard(
@@ -398,6 +490,12 @@ namespace ZharkoeLeto44.AI
                 _lastSuppressionShout = Time.time;
                 if (voice != null) voice.PlaySuppressed();
             }
+        }
+
+        internal void CommitSquadSide(int side)
+        {
+            _squadSide = Mathf.Clamp(side, -1, 1);
+            _squadSideUntil = Time.time + squadSideCommitDuration;
         }
 
         /// <summary>
@@ -552,8 +650,9 @@ namespace ZharkoeLeto44.AI
                     // Гистерезис границы боя: уже в бою — держим его до +5 м,
                     // иначе Chase↔Combat мигают каждый тик восприятия и дёргают анимацию.
                     float enterCombatAt = State == EnemyState.Combat
-                        ? maximumCombatDistance + 5f
-                        : maximumCombatDistance;
+                        ? (useSquadTactics ? SquadCombatExitDistance
+                            : maximumCombatDistance + 5f)
+                        : SquadCombatEnterDistance;
                     ChangeState(visDistance <= enterCombatAt
                         ? EnemyState.Combat
                         : EnemyState.Chase);
@@ -759,7 +858,12 @@ namespace ZharkoeLeto44.AI
         }
 
         private bool HasLineOfSight(CharacterHealth targetHealth, Vector3 targetPoint)
+            => HasLineOfSight(targetHealth, targetPoint, out _);
+
+        private bool HasLineOfSight(CharacterHealth targetHealth, Vector3 targetPoint,
+            out bool blockedByAlly)
         {
+            blockedByAlly = false;
             Vector3 origin = eyePoint.position;
             Vector3 dir = targetPoint - origin;
             float dist = dir.magnitude;
@@ -826,6 +930,12 @@ namespace ZharkoeLeto44.AI
                     return true;
                 }
 
+                CharacterHealth blockerHealth =
+                    hit.collider.GetComponentInParent<CharacterHealth>();
+                blockedByAlly = blockerHealth != null &&
+                    blockerHealth != targetHealth &&
+                    blockerHealth.Team == SquadTeam;
+
                 _lastLosBlocker = hitTransform.name;
                 return false;
             }
@@ -840,6 +950,19 @@ namespace ZharkoeLeto44.AI
             if (target != null) health = target.GetComponentInParent<CharacterHealth>();
             if (health == null && _targetHealth != null && target == _target) health = _targetHealth;
             return HasLineOfSight(health, targetPoint);
+        }
+
+        public bool EvaluateSquadLine(Vector3 aimPoint, out bool blockedByAlly)
+        {
+            blockedByAlly = false;
+            if (_health == null || !_health.IsAlive) return false;
+
+            Vector3 eye = eyePoint != null ? eyePoint.position : transform.position;
+            if ((aimPoint - eye).sqrMagnitude > viewDistance * viewDistance) return false;
+
+            CharacterHealth aimHealth = _target != null ? _targetHealth : null;
+            if (HasLineOfSight(aimHealth, aimPoint, out blockedByAlly)) return true;
+            return HasLineOfSight(aimHealth, aimPoint + Vector3.up * 0.55f, out blockedByAlly);
         }
 
         private bool IsEnclosingEyeCollider(Collider collider, int eyeCount)
@@ -999,14 +1122,17 @@ namespace ZharkoeLeto44.AI
 
             float distance = Vector3.Distance(transform.position, _target.position);
 
-            if (CanSeeCurrentTarget() && distance <= maximumCombatDistance)
+            if (CanSeeCurrentTarget() && distance <= SquadCombatEnterDistance)
             {
                 ChangeState(EnemyState.Combat);
                 return;
             }
 
-            _motor.SetSpeed(chaseSpeed);
-            RefreshDestination(_lastKnownTargetPosition);
+            _motor.SetSpeed(chaseSpeed * (useSquadTactics ? squadPursuitSpeedScale : 1f));
+            Vector3 chaseGoal = useSquadTactics
+                ? InfantrySquad.AdjustChaseGoal(this, _lastKnownTargetPosition)
+                : _lastKnownTargetPosition;
+            RefreshDestination(chaseGoal);
 
             if (_motor.HasArrived())
             {
@@ -1042,6 +1168,14 @@ namespace ZharkoeLeto44.AI
             bool visible = CanSeeCurrentTarget();
             if (visible) _lastVisibleTime = Time.time;
 
+            UpdateEngageHitTracking();
+
+            if (useSquadTactics)
+            {
+                UpdateSquadCombat(distance, visible);
+                return;
+            }
+
             bool holdingThroughFlicker = !visible &&
                 Time.time - _lastVisibleTime <= combatLoseSightGrace;
 
@@ -1057,18 +1191,6 @@ namespace ZharkoeLeto44.AI
             {
                 _motor.Stop();
                 return;
-            }
-
-            if (_targetHealth != null)
-            {
-                if (_targetHealth.CurrentHealth < _lastTargetHp - 0.01f)
-                {
-                    _engageHits++;
-                    if (debugLogging)
-                        Debug.Log($"[EnemyAI] {name}: попадание {_engageHits} по «{_target.name}» " +
-                            $"(осталось {_targetHealth.CurrentHealth:F0} HP)", this);
-                }
-                _lastTargetHp = _targetHealth.CurrentHealth;
             }
 
             // В бою только вперёд или стойка: дальше дистанции — подходит
@@ -1112,6 +1234,222 @@ namespace ZharkoeLeto44.AI
             }
         }
 
+        private void UpdateEngageHitTracking()
+        {
+            if (_targetHealth == null) return;
+
+            if (_targetHealth.CurrentHealth < _lastTargetHp - 0.01f)
+            {
+                _engageHits++;
+                if (debugLogging)
+                    Debug.Log($"[EnemyAI] {name}: попадание {_engageHits} по «{_target.name}» " +
+                        $"(осталось {_targetHealth.CurrentHealth:F0} HP)", this);
+            }
+            _lastTargetHp = _targetHealth.CurrentHealth;
+        }
+
+        private void UpdateSquadCombat(float distance, bool visible)
+        {
+            float hiddenFor = Time.time - _lastVisibleTime;
+            bool tooFar = visible && distance > SquadCombatExitDistance;
+            bool hiddenTooLong = !visible && hiddenFor > squadLostSightPursuitDelay;
+
+            if (tooFar || hiddenTooLong)
+            {
+                EndSquadMove();
+                ChangeState(EnemyState.Chase);
+                return;
+            }
+
+            Vector3 targetPosition = visible ? _target.position : _lastKnownTargetPosition;
+            Vector3 aimPoint = visible
+                ? GetTargetAimPoint(_target)
+                : targetPosition + Vector3.up * 1.4f;
+            _motor.FaceTowardsAtSpeed(targetPosition, combatTurnSpeed);
+
+            EnemyAI nearestAlly = InfantrySquad.FindNearestAlly(this, out float nearestDistance);
+            bool spacingTight = nearestAlly != null && nearestDistance < squadMinimumSpacing;
+
+            if (spacingTight && Time.time >= _nextSquadSidestepTime)
+            {
+                _nextSquadSidestepTime = Time.time + 1.5f;
+                if (InfantrySquad.TryBuildSidestepPoint(this, nearestAlly, targetPosition,
+                        out Vector3 sidestepPoint))
+                    BeginSquadMove(SquadMoveKind.Sidestep, sidestepPoint,
+                        Mathf.Min(chaseSpeed, 2.4f));
+            }
+
+            if (_squadMoveKind == SquadMoveKind.Sidestep)
+            {
+                if (ContinueSquadMove(Mathf.Min(chaseSpeed, 2.4f)))
+                {
+                    if (visible) UpdateFiring(distance, _motor.CurrentSpeed);
+                    return;
+                }
+            }
+
+            if (visible)
+            {
+                if (_squadMoveKind == SquadMoveKind.Bypass) EndSquadMove();
+
+                if (Time.time < _fireAnchorUntil)
+                {
+                    if (_squadMoveKind == SquadMoveKind.Adjust) EndSquadMove();
+                    _motor.Stop();
+                    UpdateFiring(distance, 0f);
+                    return;
+                }
+
+                if (_squadMoveKind == SquadMoveKind.Adjust &&
+                    ContinueSquadMove(Mathf.Max(1.2f, patrolSpeed)))
+                {
+                    UpdateFiring(distance, _motor.CurrentSpeed);
+                    return;
+                }
+
+                TryBeginSquadAdjust(nearestAlly, nearestDistance, targetPosition, aimPoint);
+
+                if (_squadMoveKind == SquadMoveKind.Adjust &&
+                    ContinueSquadMove(Mathf.Max(1.2f, patrolSpeed)))
+                {
+                    UpdateFiring(distance, _motor.CurrentSpeed);
+                    return;
+                }
+
+                _motor.Stop();
+                UpdateFiring(distance, 0f);
+                return;
+            }
+
+            if (Time.time < _fireAnchorUntil)
+            {
+                _motor.Stop();
+                return;
+            }
+
+            if (_squadMoveKind is SquadMoveKind.Sidestep or SquadMoveKind.Adjust)
+                EndSquadMove();
+
+            bool lineClear = EvaluateSquadLine(aimPoint, out bool blockedByAlly);
+
+            if (blockedByAlly && nearestAlly != null &&
+                Time.time >= _nextSquadSidestepTime)
+            {
+                _nextSquadSidestepTime = Time.time + 1.5f;
+                if (InfantrySquad.TryBuildSidestepPoint(this, nearestAlly, targetPosition,
+                        out Vector3 hiddenSidestepPoint))
+                {
+                    BeginSquadMove(SquadMoveKind.Sidestep, hiddenSidestepPoint,
+                        Mathf.Min(chaseSpeed, 2.4f));
+                    if (ContinueSquadMove(Mathf.Min(chaseSpeed, 2.4f))) return;
+                }
+            }
+
+            if (lineClear || blockedByAlly)
+            {
+                EndSquadMove();
+                _motor.Stop();
+                return;
+            }
+
+            if (_squadMoveKind != SquadMoveKind.Bypass &&
+                Time.time >= _nextSquadBypassTime)
+            {
+                _nextSquadBypassTime = Time.time + Random.Range(0.1f, 0.35f);
+                BeginSquadBypass(targetPosition);
+            }
+
+            if (_squadMoveKind == SquadMoveKind.Bypass &&
+                ContinueSquadMove(chaseSpeed * 0.75f))
+                return;
+
+            _motor.Stop();
+        }
+
+        private bool TryBeginSquadAdjust(EnemyAI nearest, float nearestDistance,
+            Vector3 targetPosition, Vector3 aimPoint)
+        {
+            if (nearest == null || _squadMoveKind != SquadMoveKind.None) return false;
+            if (Time.time < _nextSquadAdjustTime) return false;
+            if (nearestDistance > squadComfortSpacing.y + 5f) return false;
+            _nextSquadAdjustTime = Time.time + Random.Range(4f, 8f);
+            if (InfantrySquad.IsAnchor(this, aimPoint)) return false;
+
+            bool pullCloser = nearestDistance > squadComfortSpacing.y;
+            bool spacingIssue = pullCloser || nearestDistance < squadComfortSpacing.x;
+            Vector3 point;
+
+            if (spacingIssue)
+            {
+                if (!InfantrySquad.TryBuildSpacingAdjustPoint(this, nearest, targetPosition,
+                        pullCloser, out point))
+                    return false;
+            }
+            else if (!InfantrySquad.TryBuildFlankAdjustPoint(this, nearest, targetPosition,
+                         out point))
+            {
+                return false;
+            }
+
+            BeginSquadMove(SquadMoveKind.Adjust, point, Mathf.Max(1.2f, patrolSpeed));
+            return true;
+        }
+
+        private void BeginSquadBypass(Vector3 targetPosition)
+        {
+            int side = InfantrySquad.ChooseBypassSide(this, targetPosition);
+
+            if (InfantrySquad.TryBuildBypassPoint(this, side, targetPosition,
+                    out Vector3 point))
+            {
+                CommitSquadSide(side);
+                BeginSquadMove(SquadMoveKind.Bypass, point, chaseSpeed * 0.8f);
+                return;
+            }
+
+            Vector3 direction = targetPosition - transform.position;
+            direction.y = 0f;
+            if (direction.sqrMagnitude < 0.01f) return;
+
+            Vector3 fallback = transform.position + direction.normalized * SquadBypassMinDistance;
+            if (_motor.SampleReachablePoint(fallback, 2.5f, out Vector3 reachable))
+            {
+                CommitSquadSide(side);
+                BeginSquadMove(SquadMoveKind.Bypass, reachable, chaseSpeed * 0.8f);
+            }
+        }
+
+        private void BeginSquadMove(SquadMoveKind kind, Vector3 point, float speed)
+        {
+            _squadMoveKind = kind;
+            _squadMovePoint = point;
+            _squadMoveUntil = Time.time + (kind == SquadMoveKind.Bypass ? 2.6f : 1.3f);
+            _motor.SetSpeed(speed);
+            MoveTo(point);
+        }
+
+        private bool ContinueSquadMove(float speed)
+        {
+            if (_squadMoveKind == SquadMoveKind.None) return false;
+
+            if (Time.time >= _squadMoveUntil || _motor.HasArrived())
+            {
+                EndSquadMove();
+                return false;
+            }
+
+            _motor.SetSpeed(speed);
+            RefreshDestination(_squadMovePoint);
+            return true;
+        }
+
+        private void EndSquadMove()
+        {
+            if (_squadMoveKind == SquadMoveKind.None) return;
+            _squadMoveKind = SquadMoveKind.None;
+            _motor.Stop();
+        }
+
         private void UpdateFiring(float distance, float selfSpeed)
         {
             if (weapon == null || weapon.IsReloading || Time.time < _nextBurstTime)
@@ -1141,6 +1479,10 @@ namespace ZharkoeLeto44.AI
 
             if (weapon.TryFire(aimPoint, gameObject))
             {
+                if (_fireAnchorUntil < Time.time)
+                    _fireAnchorUntil = Time.time +
+                        squadFireAnchorDuration * Random.Range(0.9f, 1.1f);
+
                 _shotsRemaining--;
                 _burstShotIndex++;
                 if (_shotsRemaining <= 0)
@@ -1305,9 +1647,17 @@ namespace ZharkoeLeto44.AI
                 _nextCombatDecisionTime = 0f;
                 _standFireUntil = 0f;
                 _approachUntil = 0f;
+                _fireAnchorUntil = 0f;
+                _squadMoveKind = SquadMoveKind.None;
+                _squadSide = 0;
+                _squadSideUntil = 0f;
             }
             if (newState == EnemyState.Combat && previous != EnemyState.Combat)
             {
+                _nextSquadSidestepTime = Time.time + Random.Range(0f, 0.35f);
+                _nextSquadAdjustTime = Time.time + Random.Range(0.4f, 1.2f);
+                _nextSquadBypassTime = Time.time + Random.Range(0.1f, 0.6f);
+
                 if (_target == null || _target != _engageTarget ||
                     Time.time - _engageEndTime > 10f)
                 {
@@ -1505,6 +1855,7 @@ namespace ZharkoeLeto44.AI
 
         private void OnDisable()
         {
+            UnregisterSoldier();
             if (_health != null)
             {
                 _health.Damaged -= OnDamaged;
@@ -1549,6 +1900,41 @@ namespace ZharkoeLeto44.AI
                 {
                     Gizmos.color = _awareness > 0.15f ? new Color(1f, 0.5f, 0f) : Color.gray;
                     Gizmos.DrawRay(origin.position, origin.forward * 3f);
+                }
+
+                if (useSquadTactics)
+                {
+                    Gizmos.color = new Color(0.35f, 0.8f, 1f, 0.2f);
+                    Gizmos.DrawWireSphere(transform.position, squadAwarenessRadius);
+
+                    Gizmos.color = new Color(1f, 0.35f, 0.2f, 0.35f);
+                    Gizmos.DrawWireSphere(transform.position, squadMinimumSpacing);
+                    Gizmos.color = new Color(0.3f, 1f, 0.45f, 0.2f);
+                    Gizmos.DrawWireSphere(transform.position, squadComfortSpacing.x);
+                    Gizmos.DrawWireSphere(transform.position, squadComfortSpacing.y);
+
+                    EnemyAI nearest = InfantrySquad.FindNearestAlly(this, out float nearestDistance);
+                    if (nearest != null)
+                    {
+                        Gizmos.color = nearestDistance < squadMinimumSpacing
+                            ? new Color(1f, 0.25f, 0.2f, 0.8f)
+                            : new Color(0.35f, 0.9f, 1f, 0.5f);
+                        Gizmos.DrawLine(transform.position, nearest.transform.position);
+                    }
+
+                    if (_squadMoveKind != SquadMoveKind.None)
+                    {
+                        Gizmos.color = new Color(0.2f, 1f, 1f, 0.8f);
+                        Gizmos.DrawLine(transform.position + Vector3.up * 0.1f, _squadMovePoint);
+                        Gizmos.DrawWireSphere(_squadMovePoint, 0.3f);
+                    }
+
+                    if (_squadSide != 0)
+                    {
+                        Gizmos.color = _squadSide < 0 ? Color.cyan : Color.magenta;
+                        Gizmos.DrawRay(transform.position + Vector3.up * 0.1f,
+                            transform.right * (_squadSide * 2f));
+                    }
                 }
             }
 

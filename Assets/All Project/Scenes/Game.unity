@@ -2000,6 +2000,17 @@ MonoBehaviour:
   chaseSpeed: 10
   preferredCombatDistance: 20
   maximumCombatDistance: 38
+  useSquadTactics: 1
+  squadAwarenessRadius: 25
+  squadMinimumSpacing: 5
+  squadComfortSpacing: {x: 6.5, y: 8}
+  squadMicroAdjustDistance: 1.5
+  squadBypassDistance: {x: 3, y: 6}
+  squadPursuitDistance: 33
+  squadLostSightPursuitDelay: 2
+  squadFireAnchorDuration: 1.75
+  squadPursuitSpeedScale: 0.9
+  squadSideCommitDuration: 5
   combatDecisionInterval: 0.6
   minStandFireTime: 2
   minApproachTime: 1.5
@@ -20760,7 +20771,7 @@ Transform:
   m_GameObject: {fileID: 720241238}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 667.9939, y: 8.559638, z: 487.29742}
+  m_LocalPosition: {x: 787.09, y: 8.559638, z: 543.8}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -23715,6 +23726,17 @@ MonoBehaviour:
   chaseSpeed: 10
   preferredCombatDistance: 20
   maximumCombatDistance: 38
+  useSquadTactics: 1
+  squadAwarenessRadius: 25
+  squadMinimumSpacing: 5
+  squadComfortSpacing: {x: 6.5, y: 8}
+  squadMicroAdjustDistance: 1.5
+  squadBypassDistance: {x: 3, y: 6}
+  squadPursuitDistance: 33
+  squadLostSightPursuitDelay: 2
+  squadFireAnchorDuration: 1.75
+  squadPursuitSpeedScale: 0.9
+  squadSideCommitDuration: 5
   combatDecisionInterval: 0.6
   minStandFireTime: 2
   minApproachTime: 1.5
@@ -37643,6 +37665,17 @@ MonoBehaviour:
   chaseSpeed: 10
   preferredCombatDistance: 20
   maximumCombatDistance: 38
+  useSquadTactics: 1
+  squadAwarenessRadius: 25
+  squadMinimumSpacing: 5
+  squadComfortSpacing: {x: 6.5, y: 8}
+  squadMicroAdjustDistance: 1.5
+  squadBypassDistance: {x: 3, y: 6}
+  squadPursuitDistance: 33
+  squadLostSightPursuitDelay: 2
+  squadFireAnchorDuration: 1.75
+  squadPursuitSpeedScale: 0.9
+  squadSideCommitDuration: 5
   combatDecisionInterval: 0.6
   minStandFireTime: 2
   minApproachTime: 1.5
@@ -51520,6 +51553,17 @@ MonoBehaviour:
   chaseSpeed: 10
   preferredCombatDistance: 20
   maximumCombatDistance: 38
+  useSquadTactics: 1
+  squadAwarenessRadius: 25
+  squadMinimumSpacing: 5
+  squadComfortSpacing: {x: 6.5, y: 8}
+  squadMicroAdjustDistance: 1.5
+  squadBypassDistance: {x: 3, y: 6}
+  squadPursuitDistance: 33
+  squadLostSightPursuitDelay: 2
+  squadFireAnchorDuration: 1.75
+  squadPursuitSpeedScale: 0.9
+  squadSideCommitDuration: 5
   combatDecisionInterval: 0.6
   minStandFireTime: 2
   minApproachTime: 1.5
@@ -63857,6 +63901,17 @@ MonoBehaviour:
   chaseSpeed: 10
   preferredCombatDistance: 20
   maximumCombatDistance: 38
+  useSquadTactics: 1
+  squadAwarenessRadius: 25
+  squadMinimumSpacing: 5
+  squadComfortSpacing: {x: 6.5, y: 8}
+  squadMicroAdjustDistance: 1.5
+  squadBypassDistance: {x: 3, y: 6}
+  squadPursuitDistance: 33
+  squadLostSightPursuitDelay: 2
+  squadFireAnchorDuration: 1.75
+  squadPursuitSpeedScale: 0.9
+  squadSideCommitDuration: 5
   combatDecisionInterval: 0.6
   minStandFireTime: 2
   minApproachTime: 1.5
