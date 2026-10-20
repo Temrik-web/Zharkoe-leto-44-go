@@ -19,8 +19,8 @@ from reportlab.platypus import (
 )
 
 
-ROOT = Path(r"C:\Users\lokii\OneDrive\Рабочий стол\The Flame of History")
-OUT = ROOT / "output" / "pdf" / "the_flame_of_history_optimization_report.pdf"
+ROOT = Path(__file__).resolve().parents[2]
+OUT = ROOT / "output" / "pdf" / "zharkoe_leto_44_go_optimization_report.pdf"
 OUT.parent.mkdir(parents=True, exist_ok=True)
 
 pdfmetrics.registerFont(TTFont("Arial", r"C:\Windows\Fonts\arial.ttf"))
@@ -93,7 +93,7 @@ def footer(canvas, doc):
     canvas.line(19 * mm, 18 * mm, width - 19 * mm, 18 * mm)
     canvas.setFont("Arial", 8)
     canvas.setFillColor(GREY)
-    canvas.drawString(19 * mm, 13 * mm, "The Flame of History  |  Технический отчёт")
+    canvas.drawString(19 * mm, 13 * mm, "Жаркое лето 44-го  |  Технический отчёт")
     canvas.drawRightString(width - 19 * mm, 13 * mm, str(doc.page))
     canvas.restoreState()
 
@@ -102,13 +102,13 @@ doc = SimpleDocTemplate(
     str(OUT), pagesize=A4,
     leftMargin=19 * mm, rightMargin=19 * mm,
     topMargin=19 * mm, bottomMargin=23 * mm,
-    title="The Flame of History — отчёт об оптимизации и освещении",
+    title="Жаркое лето 44-го — отчёт об оптимизации и освещении",
     author="Codex",
 )
 
 story = []
 story.append(p("Аудит производительности<br/>и освещения", "title"))
-story.append(p("The Flame of History  •  Unity 2022.3.62f3  •  14 октября 2026", "subtitle"))
+story.append(p("Жаркое лето 44-го  •  Unity 2022.3.62f3  •  14 октября 2026", "subtitle"))
 story.append(HRFlowable(width="100%", thickness=1, color=RULE, spaceAfter=12))
 story.append(p(
     "Проверены горячие участки игрового кода и сохранённая сцена Main menu. "
