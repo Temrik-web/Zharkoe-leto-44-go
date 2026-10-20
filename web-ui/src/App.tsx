@@ -32,7 +32,7 @@ export default function App() {
       <main className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-10">
         <div className="grid grid-cols-1 items-start gap-6 md:grid-cols-[minmax(0,1fr)_240px] lg:grid-cols-[minmax(0,1fr)_300px]">
           <MainPanel
-            title="The Flame of History"
+            title="Жаркое лето 44-го"
             subtitle="Справочная страница Unity-проекта. Команды ниже запускаются в терминале из корня проекта."
             mainActionLabel="Скопировать команды проверки"
             onMainAction={() => void copyCommand(checkCommands, 'Команды проверки скопированы в буфер обмена.')}

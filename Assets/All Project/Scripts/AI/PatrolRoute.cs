@@ -1,6 +1,6 @@
 using UnityEngine;
 
-namespace FlameOfHistory.AI
+namespace ZharkoeLeto44.AI
 {
 public sealed class PatrolRoute : MonoBehaviour
 {

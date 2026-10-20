@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace FlameOfHistory.AI
+namespace ZharkoeLeto44.AI
 {
     [RequireComponent(typeof(EnemyMotor))]
     [RequireComponent(typeof(CharacterHealth))]

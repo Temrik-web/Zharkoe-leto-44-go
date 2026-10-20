@@ -46,7 +46,7 @@
 }</component>
   <component name="RunManager" selected="Attach to Unity Editor.Attach to Unity Editor">
     <configuration name="Standalone Player" type="RunUnityExe" factoryName="Unity Executable">
-      <option name="EXE_PATH" value="D:/TEST ЖАРКОЕ ЛЕТО 44-го\The Flame of History.exe" />
+      <option name="EXE_PATH" value="D:/TEST ЖАРКОЕ ЛЕТО 44-го\Жаркое лето 44-го.exe" />
       <option name="PROGRAM_PARAMETERS" value="" />
       <option name="WORKING_DIRECTORY" value="D:\TEST ЖАРКОЕ ЛЕТО 44-го" />
       <option name="PASS_PARENT_ENVS" value="1" />
@@ -57,8 +57,8 @@
     </configuration>
     <configuration name="Start Unity" type="RunUnityExe" factoryName="Unity Executable">
       <option name="EXE_PATH" value="C:\Program Files\Unity\Hub\Editor\2022.3.62f3\Editor\Unity.exe" />
-      <option name="PROGRAM_PARAMETERS" value="-projectPath &quot;C:\Users\lokii\OneDrive\Рабочий стол\The Flame of History&quot; -debugCodeOptimization" />
-      <option name="WORKING_DIRECTORY" value="C:\Users\lokii\OneDrive\Рабочий стол\The Flame of History" />
+      <option name="PROGRAM_PARAMETERS" value="-projectPath &quot;C:\Users\lokii\OneDrive\Рабочий стол\Жаркое лето 44-го&quot; -debugCodeOptimization" />
+      <option name="WORKING_DIRECTORY" value="C:\Users\lokii\OneDrive\Рабочий стол\Жаркое лето 44-го" />
       <option name="PASS_PARENT_ENVS" value="1" />
       <option name="ENV_FILE_PATHS" value="" />
       <option name="REDIRECT_INPUT_PATH" value="" />
@@ -67,8 +67,8 @@
     </configuration>
     <configuration name="Unit Tests (batch mode)" type="RunUnityExe" factoryName="Unity Executable">
       <option name="EXE_PATH" value="C:\Program Files\Unity\Hub\Editor\2022.3.62f3\Editor\Unity.exe" />
-      <option name="PROGRAM_PARAMETERS" value="-runTests -batchmode -projectPath &quot;C:\Users\lokii\OneDrive\Рабочий стол\The Flame of History&quot; -testResults Logs/results.xml -logFile Logs/Editor.log -testPlatform EditMode -debugCodeOptimization" />
-      <option name="WORKING_DIRECTORY" value="C:\Users\lokii\OneDrive\Рабочий стол\The Flame of History" />
+      <option name="PROGRAM_PARAMETERS" value="-runTests -batchmode -projectPath &quot;C:\Users\lokii\OneDrive\Рабочий стол\Жаркое лето 44-го&quot; -testResults Logs/results.xml -logFile Logs/Editor.log -testPlatform EditMode -debugCodeOptimization" />
+      <option name="WORKING_DIRECTORY" value="C:\Users\lokii\OneDrive\Рабочий стол\Жаркое лето 44-го" />
       <option name="PASS_PARENT_ENVS" value="1" />
       <option name="ENV_FILE_PATHS" value="" />
       <option name="REDIRECT_INPUT_PATH" value="" />

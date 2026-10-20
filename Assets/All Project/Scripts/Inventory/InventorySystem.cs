@@ -913,7 +913,7 @@ public class InventorySystem : MonoBehaviour
     /// </summary>
     void LaunchWithDropPhysics(GameObject obj, Transform origin)
     {
-        var dropper = obj.AddComponent<FlameOfHistory.AI.DroppedWeapon>();
+        var dropper = obj.AddComponent<ZharkoeLeto44.AI.DroppedWeapon>();
         Vector3 launch = GetThrowDirection(origin) * dropThrowForce + Vector3.up * 0.5f;
         dropper.Initialize(
             gravityDelay: 0.2f,

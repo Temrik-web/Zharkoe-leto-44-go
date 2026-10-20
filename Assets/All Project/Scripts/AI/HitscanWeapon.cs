@@ -1,7 +1,7 @@
 using System.Collections;
 using UnityEngine;
 
-namespace FlameOfHistory.AI
+namespace ZharkoeLeto44.AI
 {
 [DisallowMultipleComponent]
 public sealed class HitscanWeapon : MonoBehaviour

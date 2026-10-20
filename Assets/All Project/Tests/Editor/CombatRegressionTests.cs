@@ -1,6 +1,6 @@
 using System.Collections;
 using System.Reflection;
-using FlameOfHistory.AI;
+using ZharkoeLeto44.AI;
 using NUnit.Framework;
 using UnityEditor.SceneManagement;
 using UnityEngine;

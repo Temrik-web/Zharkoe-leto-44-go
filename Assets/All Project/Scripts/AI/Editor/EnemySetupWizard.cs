@@ -1,10 +1,10 @@
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.AI;
-using FlameOfHistory.AI;
+using ZharkoeLeto44.AI;
 
-using CombatEnemyAI = FlameOfHistory.AI.EnemyAI;
-using CombatTeam = FlameOfHistory.AI.Team;
+using CombatEnemyAI = ZharkoeLeto44.AI.EnemyAI;
+using CombatTeam = ZharkoeLeto44.AI.Team;
 
 public static class EnemySetupWizard
 {

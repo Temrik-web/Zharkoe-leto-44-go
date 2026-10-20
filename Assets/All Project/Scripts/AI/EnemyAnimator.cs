@@ -3,7 +3,7 @@ using UnityEngine;
 using UnityEngine.Animations;
 using UnityEngine.Playables;
 
-namespace FlameOfHistory.AI
+namespace ZharkoeLeto44.AI
 {
     /// <summary>
     /// Проигрыватель анимаций врага БЕЗ AnimatorController.

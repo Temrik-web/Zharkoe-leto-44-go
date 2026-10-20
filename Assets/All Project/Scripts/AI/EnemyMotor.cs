@@ -2,7 +2,7 @@ using UnityEngine;
 using UnityEngine.AI;
 using System.Collections.Generic;
 
-namespace FlameOfHistory.AI
+namespace ZharkoeLeto44.AI
 {
     [RequireComponent(typeof(NavMeshAgent))]
     [DisallowMultipleComponent]

@@ -56,5 +56,5 @@
         "temp/": true,
         "Temp/": true
     },
-    "dotnet.defaultSolution": "The Flame of History.sln"
+    "dotnet.defaultSolution": "Жаркое лето 44-го.sln"
 }

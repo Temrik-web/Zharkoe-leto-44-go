@@ -1,7 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using FlameOfHistory.AI;
+using ZharkoeLeto44.AI;
 
 [DisallowMultipleComponent]
 public class MeleeItem : HeldItem

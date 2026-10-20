@@ -1,7 +1,7 @@
 using System;
 using UnityEngine;
 
-namespace FlameOfHistory.AI
+namespace ZharkoeLeto44.AI
 {
 [DisallowMultipleComponent]
 public sealed class CharacterHealth : MonoBehaviour, IDamageable

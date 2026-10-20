@@ -214,7 +214,7 @@ public class GrenadeItem : HeldItem
             p.enabled = false;
             Destroy(p);
         }
-        foreach (FlameOfHistory.AI.DroppedWeapon d in pickupObject.GetComponentsInChildren<FlameOfHistory.AI.DroppedWeapon>(true))
+        foreach (ZharkoeLeto44.AI.DroppedWeapon d in pickupObject.GetComponentsInChildren<ZharkoeLeto44.AI.DroppedWeapon>(true))
             Destroy(d);
 
         ThrownGrenade thrown = pickupObject.GetComponent<ThrownGrenade>();

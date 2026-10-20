@@ -32,7 +32,7 @@ public class Wep : MonoBehaviour
     [Min(0.05f)] public float headZoneHeight = 0.3f;
 
     [Tooltip("Команда стрелка. Нужна, чтобы враги правильно реагировали на пролёт пули.")]
-    public FlameOfHistory.AI.Team shooterTeam = FlameOfHistory.AI.Team.Allies;
+    public ZharkoeLeto44.AI.Team shooterTeam = ZharkoeLeto44.AI.Team.Allies;
 
     [Tooltip("Радиус, в котором враги слышат выстрел. 0 — выстрел бесшумный для ИИ.")]
     [Min(0f)] public float shotNoiseRadius = 40f;
@@ -885,13 +885,13 @@ public class Wep : MonoBehaviour
 
         // Враги должны реагировать на пролетевшую пулю (подавление, поиск стрелка)
         // и на звук выстрела, иначе игрок стреляет в полной «тишине» для ИИ.
-        var shooterHealth = shooter.GetComponentInParent<FlameOfHistory.AI.CharacterHealth>();
+        var shooterHealth = shooter.GetComponentInParent<ZharkoeLeto44.AI.CharacterHealth>();
         var team = shooterHealth != null ? shooterHealth.Team : shooterTeam;
-        FlameOfHistory.AI.ProjectilePass.Emit(new FlameOfHistory.AI.ProjectilePass.Shot(
+        ZharkoeLeto44.AI.ProjectilePass.Emit(new ZharkoeLeto44.AI.ProjectilePass.Shot(
             rayOrigin, endPoint, shooter, team, hitSomething));
 
         if (shotNoiseRadius > 0f)
-            FlameOfHistory.AI.NoiseSystem.Emit(muzzlePoint.position, shotNoiseRadius, shooter, 1f);
+            ZharkoeLeto44.AI.NoiseSystem.Emit(muzzlePoint.position, shotNoiseRadius, shooter, 1f);
 
         if (currentFireMode == FireMode.Auto)
             currentSpread = Mathf.Min(currentSpread + autoSpreadPerShot * (1 - currentSpread / maxSpread), maxSpread);
@@ -1225,7 +1225,7 @@ public class Wep : MonoBehaviour
     /// <summary>
     /// Нанести урон тому, во что попала пуля. Возвращает true, если цель живая.
     ///
-    /// Все персонажи получают урон через FlameOfHistory.AI.IDamageable.
+    /// Все персонажи получают урон через ZharkoeLeto44.AI.IDamageable.
     /// Поиск в родителях поддерживает коллайдеры на дочерних костях.
     /// </summary>
     bool ApplyBulletDamage(RaycastHit hit, Vector3 direction)
@@ -1236,12 +1236,12 @@ public class Wep : MonoBehaviour
         GameObject shooter = fpsController != null ? fpsController.gameObject : gameObject;
         float finalDamage = IsHeadCollider(col, hit.point) ? headshotDamage : damage;
 
-        var aiTarget = col.GetComponentInParent<FlameOfHistory.AI.IDamageable>();
+        var aiTarget = col.GetComponentInParent<ZharkoeLeto44.AI.IDamageable>();
         if (aiTarget != null)
         {
             if (!aiTarget.IsAlive) return true;   // труп: дырку на нём всё равно не рисуем
 
-            aiTarget.TakeDamage(new FlameOfHistory.AI.DamageInfo(
+            aiTarget.TakeDamage(new ZharkoeLeto44.AI.DamageInfo(
                 finalDamage, hit.point, direction, shooter));
 
             if (logHits) Debug.Log($"[Gun] Попадание в {col.name}: {finalDamage:0.#} урона.");
@@ -1307,8 +1307,8 @@ public class Wep : MonoBehaviour
             ThrownGrenade live = th.collider.GetComponentInParent<ThrownGrenade>();
             if (live != null)
             {
-                ((FlameOfHistory.AI.IDamageable)live).TakeDamage(
-                    new FlameOfHistory.AI.DamageInfo(damage, th.point, direction, shooter));
+                ((ZharkoeLeto44.AI.IDamageable)live).TakeDamage(
+                    new ZharkoeLeto44.AI.DamageInfo(damage, th.point, direction, shooter));
                 endPoint = th.point;
                 hitSomething = true;
                 return;
@@ -1411,7 +1411,7 @@ public class Wep : MonoBehaviour
 
         foreach (MonoBehaviour mb in FindObjectsOfType<MonoBehaviour>())
         {
-            if (mb is not FlameOfHistory.AI.IDamageable) continue;
+            if (mb is not ZharkoeLeto44.AI.IDamageable) continue;
             if (fpsController != null && mb.transform.IsChildOf(fpsController.transform)) continue;
 
             int layer = mb.gameObject.layer;

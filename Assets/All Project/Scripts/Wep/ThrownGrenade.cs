@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
-using FlameOfHistory.AI;
+using ZharkoeLeto44.AI;
 
 /// <summary>Выпущенная граната: летит, тикает, взрывается. Урон падает к краю радиуса, стена укрывает.</summary>
 [DisallowMultipleComponent]
@@ -326,11 +326,11 @@ public class ThrownGrenade : MonoBehaviour, IDamageable
     {
         Collider[] overlapped = Physics.OverlapSphere(center, damageRadius, targetMask,
                                                      QueryTriggerInteraction.Collide);
-        var best = new Dictionary<FlameOfHistory.AI.IDamageable, KeyValuePair<Collider, float>>();
+        var best = new Dictionary<ZharkoeLeto44.AI.IDamageable, KeyValuePair<Collider, float>>();
         foreach (Collider col in overlapped)
         {
             if (col == null) continue;
-            var target = col.GetComponentInParent<FlameOfHistory.AI.IDamageable>();
+            var target = col.GetComponentInParent<ZharkoeLeto44.AI.IDamageable>();
             if (target == null || !target.IsAlive) continue;
             Vector3 targetPoint = col.ClosestPoint(center);
             if (IsBehindCover(center, targetPoint, col)) continue;
@@ -352,7 +352,7 @@ public class ThrownGrenade : MonoBehaviour, IDamageable
     bool DealDamage(Collider col, float amount, Vector3 center, Vector3 targetPoint)
     {
         Vector3 direction = (targetPoint - center).normalized;
-        var aiTarget = col.GetComponentInParent<FlameOfHistory.AI.IDamageable>();
+        var aiTarget = col.GetComponentInParent<ZharkoeLeto44.AI.IDamageable>();
         if (aiTarget != null)
         {
             if (!aiTarget.IsAlive) return false;
@@ -377,14 +377,14 @@ public class ThrownGrenade : MonoBehaviour, IDamageable
         // RaycastAll вразброс — сортируем, иначе дальняя стена закроет ближнюю цель
         System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
 
-        var targetHealth = target.GetComponentInParent<FlameOfHistory.AI.IDamageable>();
+        var targetHealth = target.GetComponentInParent<ZharkoeLeto44.AI.IDamageable>();
 
         foreach (RaycastHit hit in hits)
         {
             if (hit.collider == null) continue;
             if (hit.collider == target) return false;
             if (targetHealth != null &&
-                hit.collider.GetComponentInParent<FlameOfHistory.AI.IDamageable>() == targetHealth) return false;
+                hit.collider.GetComponentInParent<ZharkoeLeto44.AI.IDamageable>() == targetHealth) return false;
             if (hit.collider.transform.IsChildOf(transform)) continue;
             if (Thrower != null && hit.collider.transform.IsChildOf(Thrower.transform)) continue;
             return true;

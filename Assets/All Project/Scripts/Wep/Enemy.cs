@@ -1,6 +1,6 @@
 using UnityEngine;
 using System;
-using FlameOfHistory.AI;
+using ZharkoeLeto44.AI;
 
 /// <summary>Эффекты смерти. HP хранит только CharacterHealth.</summary>
 [RequireComponent(typeof(CharacterHealth))]

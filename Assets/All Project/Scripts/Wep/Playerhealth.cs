@@ -1,7 +1,7 @@
 using System;
 using System.Collections;
 using UnityEngine;
-using FlameOfHistory.AI;
+using ZharkoeLeto44.AI;
 
 /// <summary>
 /// Совместимый API для инвентаря и UI. Всё здоровье хранит CharacterHealth.
