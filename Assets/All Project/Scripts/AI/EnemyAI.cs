@@ -400,6 +400,40 @@ namespace ZharkoeLeto44.AI
             }
         }
 
+        /// <summary>
+        /// Мгновенно взять цель: свист, окрик, выстрел из-за угла.
+        /// Враг забывает патруль и бросается на игрока, даже если не видел его.
+        /// </summary>
+        public void ForceTarget(Transform target)
+        {
+            if (target == null) return;
+            if (_health == null || !_health.IsAlive) return;
+            if (State == EnemyState.Dead) return;
+
+            CharacterHealth targetHealth = target.GetComponentInParent<CharacterHealth>();
+            if (targetHealth != null && targetHealth.Team == enemyTeam) return;
+            if (targetHealth != null && !targetHealth.IsAlive) return;
+
+            SetTarget(target);
+            _awareness = 1f;
+            _hasSuspicion = false;
+            _lastKnownTargetPosition = target.position;
+            _lastTargetSeenTime = Time.time;
+
+            if (!_firstSightAcquired)
+            {
+                _firstSightAcquired = true;
+                _canFireAfter = Time.time + reactionTime * 0.5f *
+                    (jitterReaction ? Random.Range(0.8f, 1.5f) : 1f);
+            }
+
+            ChangeState(EnemyState.Chase);
+        }
+
+        /// <summary>Мгновенно взять цель по объекту.</summary>
+        public void ForceTarget(GameObject target) =>
+            ForceTarget(target != null ? target.transform : null);
+
         private void SubscribeWeapon(HitscanWeapon target)
         {
             if (target == null) return;

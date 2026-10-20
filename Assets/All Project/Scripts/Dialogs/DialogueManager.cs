@@ -387,6 +387,7 @@ public class DialogueManager : MonoBehaviour
         if (choice == null) return false;
         if (choice.endDialogue) return false;
         if (!string.IsNullOrEmpty(choice.requiredItemId)) return true;
+        if (choice.requiredItems != null && choice.requiredItems.Count > 0) return true;
         if (!string.IsNullOrEmpty(choice.requiredQuestId)) return true;
         if (choice.onSelectCommands != null)
         {
@@ -526,6 +527,26 @@ public class DialogueManager : MonoBehaviour
         if (!prefixSpeakerNameInText || speakerNameText != null) return text ?? "";
         if (string.IsNullOrEmpty(speakerName)) return text ?? "";
         return speakerName + ": " + (text ?? "");
+    }
+
+    /// <summary>
+    /// Текст узла с учётом немецкого акцента: реплика немца звучит с выговором.
+    /// Seed считаем от nodeID — одна и та же реплика читается одинаково.
+    /// </summary>
+    public static string NodeText(DialogueNode node)
+    {
+        if (node == null) return "";
+        if (!node.germanAccent) return node.dialogueText ?? "";
+        return GermanAccent.Apply(node.dialogueText, StableHash(node.nodeID));
+    }
+
+    /// <summary>Стабильный хэш строки (System.String.GetHashCode меняется между запусками).</summary>
+    static int StableHash(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return 0;
+        int h = 17;
+        foreach (char c in s) h = unchecked(h * 31 + c);
+        return h;
     }
 
     /// <summary>Портрет: спрайт из узла или круглая заглушка в цвете персонажа.</summary>
@@ -863,7 +884,7 @@ public class DialogueManager : MonoBehaviour
 
         DialogueHistory history = GetComponent<DialogueHistory>();
         if (history == null) history = gameObject.AddComponent<DialogueHistory>();
-        history.Record(DialogueKey(currentDialogue), node.speakerName, node.dialogueText, ResolveSpeakerColor(node));
+        history.Record(DialogueKey(currentDialogue), node.speakerName, NodeText(node), ResolveSpeakerColor(node));
 
         if (choicesPanel != null) choicesPanel.SetActive(false);
 
@@ -909,10 +930,10 @@ public class DialogueManager : MonoBehaviour
             }
         }
 
-        cursorBaseText = WithSpeaker(node.dialogueText, node.speakerName);
+        cursorBaseText = WithSpeaker(NodeText(node), node.speakerName);
         FitTextSize(cursorBaseText);
         // Текста нет, а выборы есть: окно не показываем, выборы сразу.
-        if (string.IsNullOrEmpty(node.dialogueText) && HasChoices(node))
+        if (string.IsNullOrEmpty(NodeText(node)) && HasChoices(node))
         {
             isTyping = false;
             revealedCharacters = 0;
@@ -928,7 +949,7 @@ public class DialogueManager : MonoBehaviour
         float speed = node.textSpeed > 0 ? node.textSpeed : defaultTextSpeed;
         if (typingCoroutine != null) StopCoroutine(typingCoroutine);
         typingCoroutine = StartCoroutine(TypeText(
-            WithSpeaker(node.dialogueText, node.speakerName), speed));
+            WithSpeaker(NodeText(node), node.speakerName), speed));
 
         if (autoAdvanceCoroutine != null) StopCoroutine(autoAdvanceCoroutine);
         if (node.autoAdvanceDelay > 0 && !HasChoices(node))
@@ -1159,13 +1180,13 @@ public class DialogueManager : MonoBehaviour
         if (dialogueText == null)
         {
             isTyping = false;
-            revealedCharacters = WithSpeaker(currentNode.dialogueText, currentNode.speakerName).Length;
+            revealedCharacters = WithSpeaker(NodeText(currentNode), currentNode.speakerName).Length;
             if (currentNode.choices.Count > 0 && !isShowingChoices)
                 StartCoroutine(ShowChoicesAfterDelay(0f));
             return;
         }
 
-        string full = WithSpeaker(currentNode.dialogueText, currentNode.speakerName);
+        string full = WithSpeaker(NodeText(currentNode), currentNode.speakerName);
         dialogueText.text = full;
         dialogueText.maxVisibleCharacters = int.MaxValue;
         revealedCharacters = full.Length;
@@ -1252,7 +1273,7 @@ public class DialogueManager : MonoBehaviour
             StopCoroutine(cursorBlinkCoroutine);
             cursorBlinkCoroutine = null;
             if (dialogueText != null && currentNode != null)
-                dialogueText.text = WithSpeaker(currentNode.dialogueText, currentNode.speakerName);
+                dialogueText.text = WithSpeaker(NodeText(currentNode), currentNode.speakerName);
         }
 
         if (choicesPanel != null) choicesPanel.SetActive(true);
@@ -1302,6 +1323,15 @@ public class DialogueManager : MonoBehaviour
         if (!string.IsNullOrEmpty(choice.requiredItemId) &&
             !DialogueCommand.PlayerHasItem(choice.requiredItemId, Mathf.Max(1, choice.requiredItemCount)))
             return false;
+        if (choice.requiredItems != null)
+        {
+            foreach (var req in choice.requiredItems)
+            {
+                if (req == null || string.IsNullOrEmpty(req.itemId)) continue;
+                if (!DialogueCommand.PlayerHasItem(req.itemId, Mathf.Max(1, req.count)))
+                    return false;
+            }
+        }
         if (!string.IsNullOrEmpty(choice.requiredQuestId) &&
             !IsQuestStateMatch(choice.requiredQuestId, choice.requiredQuestState))
             return false;

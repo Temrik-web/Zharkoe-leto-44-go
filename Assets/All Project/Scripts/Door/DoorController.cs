@@ -43,6 +43,15 @@ public class DoorController : MonoBehaviour
     private bool isAnimating = false;
     private bool isLookingAtDoor = false;
 
+    /// <summary>Дверь открылась (сценарии могут подписаться).</summary>
+    public event System.Action Opened;
+
+    /// <summary>Открыта ли дверь сейчас.</summary>
+    public bool IsOpen => isOpen;
+
+    /// <summary>Заперта ли дверь сейчас.</summary>
+    public bool IsLocked => isLocked;
+
     void Start()
     {
         closedRotation = transform.rotation;
@@ -132,6 +141,8 @@ public class DoorController : MonoBehaviour
             QuestSystem.CompleteQuest(questToCompleteOnOpen);
         }
         StartCoroutine(MoveDoor(true));
+        try { Opened?.Invoke(); }
+        catch (System.Exception e) { Debug.LogException(e, this); }
     }
     public void Close()
     {
@@ -183,6 +194,17 @@ public class DoorController : MonoBehaviour
             return true;
         }
         return false;
+    }
+
+    /// <summary>
+    /// Снять замок снаружи (по сценарию: немец отпер дверь и постучал).
+    /// </summary>
+    public void Unlock(bool playSound = true)
+    {
+        if (!isLocked) return;
+        isLocked = false;
+        if (playSound) PlaySound(openSound);
+        Debug.Log($"[Door] {name}: замок снят сценарием.", this);
     }
     private void PlaySound(AudioClip clip)
     {

@@ -2,6 +2,15 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Events;
 
+/// <summary>Требование к предмету для варианта ответа.</summary>
+[System.Serializable]
+public class ItemRequirement
+{
+    [Tooltip("Id предмета из ItemDatabase (например bread).")]
+    public string itemId = "";
+    [Min(1)] public int count = 1;
+}
+
 [System.Serializable]
 public class DialogueChoice
 {
@@ -16,6 +25,9 @@ public class DialogueChoice
     public string requiredItemId;
     [Tooltip("Сколько штук предмета нужно.")]
     public int requiredItemCount = 1;
+    [Tooltip("Несколько предметов сразу: нужны ВСЕ перечисленные. " +
+             "Например: хлеб + вода. Пустой список = не проверять.")]
+    public List<ItemRequirement> requiredItems = new List<ItemRequirement>();
     [Tooltip("Id квеста (например q_cart_key). Кнопка видна, только если статус совпал.")]
     public string requiredQuestId;
     [Tooltip("0 — любой взятый (активен или выполнен), 1 — активен, 2 — выполнен, 3 — провален.")]

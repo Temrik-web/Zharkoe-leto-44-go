@@ -1,0 +1,226 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5b10eef72775f734787ca02c4ae93b61, type: 3}
+  m_Name: PpshGermanDialogue
+  m_EditorClassIdentifier:
+  dialogueName: "ППШ — немец за дверью"
+  description: "После подбора ППШ за дверью стучит немец. Просит хлеб и воду. Согласие — уходит, отказ — свист и шестеро из засады."
+  completionQuestId:
+  nodes:
+  - nodeID: N1
+    nextNodeID: N2
+    speakerName: "Немец"
+    speakerPortrait: {fileID: 0}
+    speakerColor: {r: 0, g: 0, b: 0, a: 0}
+    dialogueText: "Halt! Не стреляйте! Штоп... не шумите! Ich bin allein. Я один, один. Слышите?"
+    voiceClip: {fileID: 0}
+    germanAccent: 1
+    textSpeed: 0
+    autoAdvanceDelay: 0
+    onEnterCommands: []
+    choices: []
+    onNodeEnter:
+      m_PersistentCalls:
+        m_Calls: []
+    onNodeExit:
+      m_PersistentCalls:
+        m_Calls: []
+  - nodeID: N2
+    nextNodeID: N3
+    speakerName: "Алесь"
+    speakerPortrait: {fileID: 0}
+    speakerColor: {r: 0, g: 0, b: 0, a: 0}
+    dialogueText: "Стой. Не подходи. Кто ты и как ты сюда попал?"
+    voiceClip: {fileID: 0}
+    germanAccent: 0
+    textSpeed: 0
+    autoAdvanceDelay: 0
+    onEnterCommands: []
+    choices: []
+    onNodeEnter:
+      m_PersistentCalls:
+        m_Calls: []
+    onNodeExit:
+      m_PersistentCalls:
+        m_Calls: []
+  - nodeID: N3
+    nextNodeID: N4
+    speakerName: "Немец"
+    speakerPortrait: {fileID: 0}
+    speakerColor: {r: 0, g: 0, b: 0, a: 0}
+    dialogueText: "Я... Ганс. Рядовой, Ганс. Мой взвод разбили у шоссе, третий день назад. Ich habe Hunger — я голоден. Дай Brot, bitte, и Wasser, bitte. Только хлеб и воду."
+    voiceClip: {fileID: 0}
+    germanAccent: 1
+    textSpeed: 0
+    autoAdvanceDelay: 0
+    onEnterCommands: []
+    choices: []
+    onNodeEnter:
+      m_PersistentCalls:
+        m_Calls: []
+    onNodeExit:
+      m_PersistentCalls:
+        m_Calls: []
+  - nodeID: N4
+    nextNodeID: ""
+    speakerName: "Немец"
+    speakerPortrait: {fileID: 0}
+    speakerColor: {r: 0, g: 0, b: 0, a: 0}
+    dialogueText: "И Tabak, если есть. И Streichholz — спички. Немец в плену, я не маньяк, я просто солдат, который забыл дорогу. Ну? Что скажешь, Soldat?"
+    voiceClip: {fileID: 0}
+    germanAccent: 1
+    textSpeed: 0
+    autoAdvanceDelay: 0
+    onEnterCommands: []
+    choices:
+    - choiceText: "Где твои? Сколько вас?"
+      condition: {fileID: 0}
+      requiredItemId:
+      requiredItemCount: 1
+      requiredItems: []
+      requiredQuestId:
+      requiredQuestState: 1
+      showWhenLocked: 0
+      nextNodeID: N4_where
+      endDialogue: 0
+      onSelectCommands: []
+      onSelected:
+        m_PersistentCalls:
+          m_Calls: []
+    - choiceText: "Держи хлеб и флягу. И уходи."
+      condition: {fileID: 0}
+      requiredItemId:
+      requiredItemCount: 1
+      requiredItems:
+      - itemId: bread
+        count: 1
+      - itemId: water
+        count: 1
+      requiredQuestId:
+      requiredQuestState: 1
+      showWhenLocked: 1
+      nextNodeID: N5_agree
+      endDialogue: 0
+      onSelectCommands:
+      - type: 4
+        stringParam: bread
+        stringValueParam:
+        boolParam: 0
+        intParam: 1
+        floatParam: 0
+        gameObjectParam: {fileID: 0}
+        clipParam: {fileID: 0}
+        spriteParam: {fileID: 0}
+      - type: 4
+        stringParam: water
+        stringValueParam:
+        boolParam: 0
+        intParam: 1
+        floatParam: 0
+        gameObjectParam: {fileID: 0}
+        clipParam: {fileID: 0}
+        spriteParam: {fileID: 0}
+      - type: 10
+        stringParam: ppsh_german_agreed
+        stringValueParam:
+        boolParam: 0
+        intParam: 0
+        floatParam: 0
+        gameObjectParam: {fileID: 0}
+        clipParam: {fileID: 0}
+        spriteParam: {fileID: 0}
+      onSelected:
+        m_PersistentCalls:
+          m_Calls: []
+    - choiceText: "У меня пусто. Убирайся."
+      condition: {fileID: 0}
+      requiredItemId:
+      requiredItemCount: 1
+      requiredItems: []
+      requiredQuestId:
+      requiredQuestState: 1
+      showWhenLocked: 0
+      nextNodeID: N5_refuse
+      endDialogue: 0
+      onSelectCommands:
+      - type: 10
+        stringParam: ppsh_german_refused
+        stringValueParam:
+        boolParam: 0
+        intParam: 0
+        floatParam: 0
+        gameObjectParam: {fileID: 0}
+        clipParam: {fileID: 0}
+        spriteParam: {fileID: 0}
+      onSelected:
+        m_PersistentCalls:
+          m_Calls: []
+    onNodeEnter:
+      m_PersistentCalls:
+        m_Calls: []
+    onNodeExit:
+      m_PersistentCalls:
+        m_Calls: []
+  - nodeID: N4_where
+    nextNodeID: N4
+    speakerName: "Немец"
+    speakerPortrait: {fileID: 0}
+    speakerColor: {r: 0, g: 0, b: 0, a: 0}
+    dialogueText: "В лесу... за огородами, у берёзы. Они ждут. Я к ним не пойду. Ich will nach Hause — я домой хочу. Ты понимаешь, Soldat?"
+    voiceClip: {fileID: 0}
+    germanAccent: 1
+    textSpeed: 0
+    autoAdvanceDelay: 0
+    onEnterCommands: []
+    choices: []
+    onNodeEnter:
+      m_PersistentCalls:
+        m_Calls: []
+    onNodeExit:
+      m_PersistentCalls:
+        m_Calls: []
+  - nodeID: N5_agree
+    nextNodeID: ""
+    speakerName: "Немец"
+    speakerPortrait: {fileID: 0}
+    speakerColor: {r: 0, g: 0, b: 0, a: 0}
+    dialogueText: "Danke... Спасибо, Soldat. Du bist ein guter Mensch. Я ухожу. Меня здесь не было. Не ищи меня."
+    voiceClip: {fileID: 0}
+    germanAccent: 1
+    textSpeed: 0
+    autoAdvanceDelay: 0
+    onEnterCommands: []
+    choices: []
+    onNodeEnter:
+      m_PersistentCalls:
+        m_Calls: []
+    onNodeExit:
+      m_PersistentCalls:
+        m_Calls: []
+  - nodeID: N5_refuse
+    nextNodeID: ""
+    speakerName: "Немец"
+    speakerPortrait: {fileID: 0}
+    speakerColor: {r: 0, g: 0, b: 0, a: 0}
+    dialogueText: "Пожалеешь... Нас шесть, Soldat. Мы уже здесь. Hören Sie? Слышишь?"
+    voiceClip: {fileID: 0}
+    germanAccent: 1
+    textSpeed: 0
+    autoAdvanceDelay: 0
+    onEnterCommands: []
+    choices: []
+    onNodeEnter:
+      m_PersistentCalls:
+        m_Calls: []
+    onNodeExit:
+      m_PersistentCalls:
+        m_Calls: []

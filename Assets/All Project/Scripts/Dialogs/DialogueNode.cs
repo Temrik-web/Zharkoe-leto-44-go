@@ -17,6 +17,10 @@ public class DialogueNode
     [TextArea(3, 10)]
     public string dialogueText;
     public AudioClip voiceClip;
+    [Tooltip("Произносить реплику с немецким акцентом: слова латиницей станут " +
+             "русской фонетикой («bitte» → «битте», «Wasser» → «вассер»), " +
+             "в начало реплики иногда добавится запинка. Для реплик немца.")]
+    public bool germanAccent = false;
 
     [Header("Скорость и паузы")]
     public float textSpeed = 0.05f;
