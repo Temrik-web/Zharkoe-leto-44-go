@@ -80,10 +80,10 @@ namespace ZharkoeLeto44.AI
                  "(чтобы не было лунной походки на месте). Для теста «run везде» ВЫКЛЮЧИ — " +
                  "тогда run будет играться даже стоя.")]
         [SerializeField] private bool freezeInPlaceWithoutIdle = true;
-        [Tooltip("ЗАМОК МАСШТАБА. Принудительно включается в Awake/OnEnable: после оценки графа " +
-                 "возвращает костям сохранённый bind-масштаб, если клип или смешивание клипов его " +
-                 "изменили. Это страховка для клипов с несовпадающими Scale-кривыми. " +
-                 "Галку можно снять только для диагностики.")]
+        [Tooltip("ЗАМОК МАСШТАБА. Принудительно включается в Awake/OnEnable (галка в " +
+                 "инспекторе не влияет): после оценки графа возвращает костям сохранённый " +
+                 "bind-масштаб, если клип или смешивание клипов его изменили. Это страховка " +
+                 "для клипов с несовпадающими Scale-кривыми.")]
         [SerializeField] private bool lockScales = true;
 
         [Header("Экшен-клипы (необязательно — можно оставить пустыми)")]
@@ -183,6 +183,7 @@ namespace ZharkoeLeto44.AI
         private bool _warnedController;
         private bool _warnedNoDeathClip;
         private bool _warnedNoGraph;
+        private bool _warnedNoUpperBodyMask;
 
         private void Awake()
         {
@@ -207,6 +208,28 @@ namespace ZharkoeLeto44.AI
             if (runAnchorSpeed <= walkAnchorSpeed) runAnchorSpeed = walkAnchorSpeed + 0.5f;
             if (sprintAnchorSpeed <= runAnchorSpeed) sprintAnchorSpeed = runAnchorSpeed + 0.5f;
             RefreshClipCache();
+            WarnIfUpperBodyMaskMissing();
+        }
+
+        /// <summary>
+        /// Без AvatarMask слой экшена (выстрел/перезарядка/попадание) и слои
+        /// прицельных поз перекрывают локомоцию ЦЕЛИКОМ — ноги замирают.
+        /// Само поведение не меняем (это сломало быDeath-слой и текущие сцены),
+        /// но предупреждаем: маску надо назначить.
+        /// </summary>
+        private void WarnIfUpperBodyMaskMissing()
+        {
+            if (!verbose || _warnedNoUpperBodyMask) return;
+            if (upperBodyMask != null) return;
+            bool hasActionOrAim = shootClip != null || shootRecoilClip != null ||
+                                  reloadClip != null || hitClip != null ||
+                                  aimIdleClip != null || aimWalkClip != null;
+            if (!hasActionOrAim) return;
+
+            _warnedNoUpperBodyMask = true;
+            Debug.LogWarning($"[EnemyAnimator] {name}: не задана AvatarMask верхнего тела — " +
+                "слои выстрела/перезарядки/попадания и прицельные позы перекроют локомоцию " +
+                "целиком (ноги замирают). Назначь Upper Body Mask.", this);
         }
 
         private void OnEnable()
@@ -420,6 +443,16 @@ namespace ZharkoeLeto44.AI
             if (_dead) return;
             _dead = true;
             _aiming = false;
+            // Прицельные позы гасим сразу: иначе ещё ~0.25 с после смерти
+            // видно смесь прицела и трупа.
+            _aimWeight = 0f;
+            _aimIdleWeight = 0f;
+            _aimWalkWeight = 0f;
+            if (_layerMixer.IsValid())
+            {
+                _layerMixer.SetInputWeight(AimIdleLayer, 0f);
+                _layerMixer.SetInputWeight(AimWalkLayer, 0f);
+            }
             // Запоминаем ВЫБРАННЫЙ клип: если экшен позже потеряется (пересборка графа),
             // долежим ТОТ ЖЕ клип, а не кинем рандом заново (иначе труп дёргается).
             _deathClipInUse = SelectDeathClip();
@@ -471,6 +504,10 @@ namespace ZharkoeLeto44.AI
                 if (i >= 1 && _anchorCache[i] > 0.01f)
                     scale = Mathf.Clamp(_speed / _anchorCache[i], 0.8f, 1.2f);
                 if (standingWithoutIdle && i == slowest) scale = 0f;
+                // Клип, который уходит в ноль, не должен «топтаться» на месте:
+                // раньше ноги продолжали идти (0.8×) ещё 0.3–0.5 с после остановки,
+                // пока вес догасал (лунная походка).
+                if (_targets[i] <= 0.001f) scale = 0f;
 
                 p.SetSpeed(_dead ? 0f : scale);
             }
@@ -747,6 +784,9 @@ namespace ZharkoeLeto44.AI
             _actionLength = Mathf.Max(0.05f, (float)clip.length);
             _actionHoldAtEnd = holdAtEnd;
             _actionTargetWeight = 1f;
+            // Новый экшен стартует с нуля: раньше он наследовал вес предыдущего
+            // (выстрел → перезарядка) и «всплывал» с чужим весом.
+            _actionWeight = 0f;
             _layerMixer.SetInputWeight(_actionLayer, _actionWeight);
             ApplyLayerWeights();
         }
@@ -869,15 +909,27 @@ namespace ZharkoeLeto44.AI
                 return;
             }
 
+            // Локомоция — слоты 1..3 (walk/run/sprint). IDLE (слот 0) в смешивание
+            // НЕ входит: раньше он попадал в диапазон [first..last], и при
+            // anchors[0] == 0 солдат на 1 м/с играл 45% idle + 55% walk —
+            // ноги в полу-стойке. Idle — только отдельная поза покоя.
             int first = -1, last = -1;
-            for (int i = 0; i < 4; i++)
+            for (int i = 1; i < 4; i++)
                 if (clips[i] != null) { if (first < 0) first = i; last = i; }
-            if (first < 0) return;
+
+            // Локомоции нет вовсе — играем idle (или ничего).
+            if (first < 0)
+            {
+                if (clips[0] != null) outW[0] = 1f;
+                return;
+            }
 
             // Гистерезис: пока «идём» (даже на микрошаге) — не падаем в idle.
             if (speed <= idleMaxSpeed && !_movingState)
             {
-                outW[idleClip != null ? 0 : first] = 1f;
+                // Idle, если он есть; иначе — самая медленная локомоция
+                // (её замораживает freezeInPlaceWithoutIdle — без лунной походки).
+                outW[clips[0] != null ? 0 : first] = 1f;
                 return;
             }
 
@@ -1001,9 +1053,14 @@ namespace ZharkoeLeto44.AI
             if (_graph.IsValid()) _graph.Destroy();
             _graphReady = false;
             _actionPlayable = new AnimationClipPlayable();
+            _actionLayer = ActionLayer;
             _actionWeight = 0f;
             _actionTargetWeight = 0f;
             _aimWeight = 0f;
+            _aimIdleWeight = 0f;
+            _aimWalkWeight = 0f;
+            _aimIdlePlayable = new AnimationClipPlayable();
+            _aimWalkPlayable = new AnimationClipPlayable();
             _actionClipInUse = null;
             // Плейабл позы ожидания: клип (_standClip) сохраняем — он переподключится
             // при следующей сборке графа. Сам плейабл чистим вместе с графом.

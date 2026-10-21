@@ -72,7 +72,8 @@ namespace ZharkoeLeto44.AI
         [Header("Patrol")]
         [SerializeField, Min(0f)] private float patrolSpeed = 1.6f;
         [Tooltip("Скорость настороженного шага (jog), м/с. Отдельная от патруля и погони: " +
-                 "раньше «смесь» walk+run в одной скорости (chaseSpeed×0.8) ломала якоря анимации.")]
+                 "раньше «смесь» walk+run в одной скорости (chaseSpeed×0.8) ломала якоря анимации. " +
+                 "В Alert солдат переходит на бег (RunSpeed) — это поле база для переходов.")]
         [SerializeField, Min(0f)] private float alertSpeed = 2.2f;
         [Tooltip("Множитель скорости перебежки (спринта) от Chase Speed, м/с.")]
         [SerializeField, Min(1f)] private float sprintSpeedMultiplier = 1.25f;
@@ -190,6 +191,9 @@ namespace ZharkoeLeto44.AI
         [Tooltip("Задержка реакции на «внезапную» цель (появилась из-за угла), сек. " +
                  "Для цели, замеченной давно, реакция обычная (Reaction Time).")]
         [SerializeField, Min(0f)] private float suddenTargetReactionDelay = 0.3f;
+        [Tooltip("Сколько секунд цель должна пропасть из виду, чтобы это считалось " +
+                 "«внезапным» появлением и включило задержку реакции.")]
+        [SerializeField, Min(0f)] private float suddenTargetMinHidden = 0.2f;
         [Tooltip("На сколько секунд вперёд просчитывается уход цели в погоне, сек.")]
         [SerializeField, Min(0f)] private float chaseLeadTime = 1.2f;
         [Tooltip("Максимальный упреждение по уходу цели, м.")]
@@ -410,6 +414,8 @@ namespace ZharkoeLeto44.AI
         private float _lastPerceptionVisibleTime = float.NegativeInfinity;
         private float _lastPerceptionTime = float.NegativeInfinity;
         private bool _targetVisibleLastTick;
+        private float _targetHiddenSince = float.NegativeInfinity;
+        private bool _suddenDelayApplied;
         private float _searchUntil;
         private float _nextPathRefreshTime;
         private float _patrolWaitUntil;
@@ -426,6 +432,9 @@ namespace ZharkoeLeto44.AI
         private float _squadPersonalSpace;
         private Vector3 _lastPathDestination;
         private bool _hasPathDestination;
+        private bool _lastMoveSucceeded = true;
+        private float _nextPatrolRetryTime;
+        private const float patrolRetryDelay = 0.5f;
 
         // СВОЯ ТОЧКА В БОЮ: солдат держит своё место в строю, а не точку игрока.
         // Якорь двигается плавно (combatAnchorTrackSpeed) — никаких рывков.
@@ -433,6 +442,24 @@ namespace ZharkoeLeto44.AI
         private bool _hasCombatAnchor;
         private Vector3 _formationForward = Vector3.forward;
         private bool _formationReady;
+
+        // D4: тяжёлые расчёты (раскладка строя, мягкое разведение, проверка
+        // якоря на NavMesh) — ~5 Гц со случайным сдвигом, а не каждый кадр.
+        // Иначе 30 солдат в бою дают ~2×N² проверок дистанции в кадр.
+        private const float FormationRefreshInterval = 0.2f;
+        private const float FormationRefreshJitter = 0.1f;
+        private const float AnchorCheckInterval = 0.2f;
+        private const float AnchorCheckJitter = 0.1f;
+        private const float AnchorSampleRadius = 2.5f;
+
+        private float _nextFormationTime;
+        private float _formationLateral;
+        private float _formationDepth;
+        private Vector3 _separationOffset;
+        private float _nextAnchorCheckTime;
+        private Vector3 _anchorNavCorrection;
+        private float _nextChaseGoalTime;
+        private Vector3 _chaseGoalOffset;
         private float _nextDiagTime;
         private string _lastLosBlocker;
         private string _lastRejectNote;
@@ -442,7 +469,9 @@ namespace ZharkoeLeto44.AI
         private string _lastStateChangeReason;
         private string _lastExceptionText;
         private System.Type _lastExceptionType;
-        private float _lastExceptionLogTime = float.NegativeInfinity;
+        // Троттлинг логов — ОБЩИЙ на всех врагов: 30 сломанных солдат не должны
+        // давать 30 сообщений каждые 5 секунд (инвариант «один лог»).
+        private static float s_lastExceptionLogTime = float.NegativeInfinity;
         private bool _diagLosOverflow;
 
         private Vector3 _searchCenter;
@@ -468,6 +497,10 @@ namespace ZharkoeLeto44.AI
         private float _lookAroundHoldUntil;
         private float _nextLookAroundTime;
 
+        // Поворот корпуса на источник звука.
+        private float _lookAtSoundUntil;
+        private Vector3 _lookAtSoundPoint;
+
         private int _burstShotIndex;
         private float _wanderSpeedFactor = 1f;
         private float _wanderBaseAngle;
@@ -477,6 +510,7 @@ namespace ZharkoeLeto44.AI
         private float _engageEndTime = float.NegativeInfinity;
         private int _engageStage;
         private bool _engageOpen;
+        private float _engageHpBaseline = 1f;
         private float _lastTargetHp;
         private bool _blockedByAlly;
         private bool _coverPeeking;
@@ -528,6 +562,7 @@ namespace ZharkoeLeto44.AI
             s_characterList.Clear();
             s_playerHealth = null;
             s_fallbackTacticsWarned = false;
+            s_lastExceptionLogTime = float.NegativeInfinity;
         }
 
         public static void RegisterPlayer(CharacterHealth player)
@@ -580,7 +615,13 @@ namespace ZharkoeLeto44.AI
                 _motor = gameObject.AddComponent<EnemyMotor>();
             }
 
-            _health = GetComponent<CharacterHealth>();
+            // CharacterHealth может лежать на самом объекте или выше по иерархии
+            // (так же работают SetTarget / OnNoiseCreated / OnDamaged — через
+            // GetComponentInParent). Ищем по родителям: иначе AddComponent создал
+            // бы ВТОРОЕ здоровье с дефолтной командой Axis — враг стал бы
+            // бессмертным (урон идёт в родительский CharacterHealth, а ИИ его
+            // не видит) и команда врага разошлась бы с реальной (D1/D6).
+            _health = GetComponentInParent<CharacterHealth>();
             if (_health == null)
             {
                 _health = gameObject.AddComponent<CharacterHealth>();
@@ -626,14 +667,20 @@ namespace ZharkoeLeto44.AI
 
         private void OnEnable()
         {
-            if (_health == null) _health = GetComponent<CharacterHealth>();
+            if (_health == null) _health = GetComponentInParent<CharacterHealth>();
             if (_health == null) return;
             RegisterSoldier();
             _health.Damaged += OnDamaged;
             _health.Died += OnDied;
             NoiseSystem.NoiseCreated += OnNoiseCreated;
             SubscribeWeapon(weapon);
-            State = EnemyState.Patrol;
+            // ForceTarget мог быть вызван ДО активации объекта (сценарий «бросает
+            // немцев на игрока» через FindObjectsOfType<EnemyAI>(true)). Раньше
+            // OnEnable безусловно ставил Patrol — выбранная цель терялась, а
+            // стейт оставался Patrol с непустой целью. Не затираем состояние,
+            // если цель уже задана.
+            if (State != EnemyState.Dead && _target == null)
+                State = EnemyState.Patrol;
             if (_motor != null)
             {
                 _motor.SetManualRotation(false);
@@ -644,6 +691,7 @@ namespace ZharkoeLeto44.AI
             _hasCombatAnchor = false;
             _formationReady = false;
             _lookAroundPhase = LookAroundPhase.None;
+            _lookAtSoundUntil = 0f;
             _nextLookAroundTime = Time.time + Random.Range(lookAroundIntervalMin,
                 lookAroundIntervalMax);
             _nextPerceptionTime = Time.time + Random.Range(0f,
@@ -653,6 +701,8 @@ namespace ZharkoeLeto44.AI
             _cachedCanSee = false;
             _losBlockedByAlly = false;
             _targetVisibleLastTick = false;
+            _targetHiddenSince = float.NegativeInfinity;
+            _suddenDelayApplied = false;
             _hasPathDestination = false;
             _nextPathRefreshTime = 0f;
             _lastNotSeenReason = null;
@@ -660,7 +710,6 @@ namespace ZharkoeLeto44.AI
             _lastStateChangeReason = null;
             _lastExceptionText = null;
             _lastExceptionType = null;
-            _lastExceptionLogTime = float.NegativeInfinity;
         }
 
         private void Start()
@@ -823,10 +872,35 @@ namespace ZharkoeLeto44.AI
             if (State == EnemyState.Dead) return;
 
             CharacterHealth targetHealth = target.GetComponentInParent<CharacterHealth>();
-            if (targetHealth != null && targetHealth.Team == OwnTeam) return;
-            if (targetHealth != null && !targetHealth.IsAlive) return;
+            if (targetHealth == null)
+            {
+                // D1/D6: «своя команда» = ТОЛЬКО CharacterHealth.Team. Без
+                // CharacterHealth команду определить нельзя — такую цель брать
+                // нельзя (ИИ бросился бы на своего). Исключение — сам игрок:
+                // у него CharacterHealth есть всегда (Playerhealth: RequireComponent).
+                if (s_playerHealth != null &&
+                    (target == s_playerHealth.transform || target.IsChildOf(s_playerHealth.transform)))
+                {
+                    targetHealth = s_playerHealth;
+                }
+                else
+                {
+                    if (debugLogging)
+                        Debug.LogWarning($"[EnemyAI] {name}: цель «{target.name}» без CharacterHealth — " +
+                            "команду определить нельзя, цель не беру.", this);
+                    return;
+                }
+            }
+            if (targetHealth.Team == OwnTeam) return;
+            if (!targetHealth.IsAlive) return;
 
             SetTarget(target);
+            if (_targetHealth == null) _targetHealth = targetHealth;
+            // LOS-кэш сбрасываем ВСЕГДА: та же цель после смены обстановки могла
+            // остаться «невидимой» по старому результату.
+            _nextLosCheckTime = 0f;
+            _cachedCanSee = false;
+            _losBlockedByAlly = false;
             _awareness = 1f;
             _hasSuspicion = false;
             _lastKnownTargetPosition = target.position;
@@ -945,6 +1019,17 @@ namespace ZharkoeLeto44.AI
 
             try
             {
+                // Поворот на звук — ПОСЛЕ стейт-подсистемы, чтобы её вызовы
+                // мотора не затирали наш ручной поворот.
+                UpdateLookAtSound();
+            }
+            catch (System.Exception e)
+            {
+                ReportSubsystemFailure("state", e);
+            }
+
+            try
+            {
                 UpdateAnimator();
             }
             catch (System.Exception e)
@@ -964,7 +1049,10 @@ namespace ZharkoeLeto44.AI
             if (debugLogging && Time.time >= _nextDiagTime)
             {
                 _nextDiagTime = Time.time + 1.5f;
-                LogDiag();
+                // Диагностика — тоже в try/catch: иначе исключение из неё
+                // вылетело бы из Update() и Unity логировала бы его каждый кадр.
+                try { LogDiag(); }
+                catch (System.Exception e) { ReportSubsystemFailure("diag", e); }
             }
         }
 
@@ -974,11 +1062,11 @@ namespace ZharkoeLeto44.AI
 
             System.Type type = exception.GetType();
             bool newType = type != _lastExceptionType;
-            bool throttled = Time.unscaledTime - _lastExceptionLogTime >= 5f;
+            bool throttled = Time.unscaledTime - s_lastExceptionLogTime >= 5f;
             if (!newType && !throttled) return;
 
             _lastExceptionType = type;
-            _lastExceptionLogTime = Time.unscaledTime;
+            s_lastExceptionLogTime = Time.unscaledTime;
 
             string stack = exception.StackTrace;
             int lineEnd = stack != null ? stack.IndexOf('\n') : -1;
@@ -1003,8 +1091,19 @@ namespace ZharkoeLeto44.AI
         private void ApplyStateFailureFallback()
         {
             if (_motor == null || _target == null) return;
-            _motor.Stop();
-            _motor.FaceTowardsAtSpeed(_target.position, combatTurnSpeed);
+            try
+            {
+                _motor.Stop();
+                _motor.FaceTowardsAtSpeed(_target.position, combatTurnSpeed);
+            }
+            catch (System.Exception e)
+            {
+                // Fallback тоже может упасть (например, если упал сам мотор).
+                // Без защиты исключение вылетело бы из Update() и Unity логировала
+                // бы его КАЖДЫЙ кадр — троттлинг ReportSubsystemFailure при этом
+                // уже израсходован. Здесь лог уходит в тот же троттлинг.
+                ReportSubsystemFailure("state-fallback", e);
+            }
         }
 
         private void UpdatePerception()
@@ -1021,10 +1120,12 @@ namespace ZharkoeLeto44.AI
                 // Повторное появление цели после паузы: короткая задержка
                 // ставится ОДИН раз, а не на каждом тике восприятия.
                 bool reacquired = _firstSightAcquired && !_targetVisibleLastTick;
-                float previousVisibleTime = _lastPerceptionVisibleTime;
+                // Сколько цель пропадала из виду — для задержки на «внезапную» цель.
+                float hiddenFor = _targetHiddenSince > 0f ? Time.time - _targetHiddenSince : 0f;
 
                 _targetVisibleLastTick = true;
                 _lastPerceptionVisibleTime = Time.time;
+                _targetHiddenSince = float.NegativeInfinity;
 
                 if (visDistance <= Mathf.Max(0f, instantDetectDistance))
                 {
@@ -1055,10 +1156,15 @@ namespace ZharkoeLeto44.AI
                             Debug.Log($"[EnemyAI] {name}: заметил цель «{visible.name}» " +
                                 $"(дистанция {visDistance:F1} м)", this);
                     }
-                    else if (reacquired &&
-                             Time.time - previousVisibleTime >
-                             perceptionInterval * 2f + 0.05f)
+                    else if (reacquired && !_suddenDelayApplied &&
+                             hiddenFor >= suddenTargetMinHidden)
                     {
+                        // Задержка на «внезапную» цель. Порог — СКОРОСТЬ
+                        // исчезновения цели, а не число тиков восприятия: раньше
+                        // мигание на один тик (≈0.15 с) задержки не давало вовсе.
+                        // Флаг _suddenDelayApplied не даёт «мигающей» цели съесть
+                        // стрельбу: задержка выдаётся один раз за серию исчезновений.
+                        _suddenDelayApplied = true;
                         _canFireAfter = Mathf.Max(_canFireAfter,
                             Time.time + suddenTargetReactionDelay);
                     }
@@ -1089,6 +1195,14 @@ namespace ZharkoeLeto44.AI
             }
 
             _targetVisibleLastTick = false;
+
+            // Цель пропала из виду — запоминаем КОГДА. Пока её не видно, идёт
+            // отсчёт; если пропала надолго — серия задержек сбрасывается, чтобы
+            // «мигающая» цель не съедала стрельбу.
+            if (_target != null && _targetHiddenSince < 0f)
+                _targetHiddenSince = Time.time;
+            if (_targetHiddenSince > 0f && Time.time - _targetHiddenSince > 1f)
+                _suddenDelayApplied = false;
 
             if (_target != null && Time.time - _lastTargetSeenTime > targetMemoryDuration)
             {
@@ -1158,7 +1272,7 @@ namespace ZharkoeLeto44.AI
             blocker = "";
             if (_target == null) return false;
 
-            Vector3 chest = GetTargetAimPoint(_target);
+            Vector3 chest = CurrentTargetAimPoint();
             if ((chest - eyePoint.position).sqrMagnitude > viewDistance * viewDistance)
             {
                 blocker = "дальше viewDistance";
@@ -1261,17 +1375,21 @@ namespace ZharkoeLeto44.AI
                 (targetMask.value & (1 << cand.gameObject.layer)) == 0)
             {
                 _diagRejectedLayer++;
-                string layerName = LayerMask.LayerToName(cand.gameObject.layer);
                 if (playerTarget)
                 {
                     // LAYER фиксируем в отладке, но игрока всё равно проверяем:
                     // рассинхрон слоя не должен делать его невидимым.
                     if (DiagEnabled)
-                        _lastRejectNote = $"LAYER: игрок вне TargetMask (слой {layerName}) — обход";
+                        _lastRejectNote = $"LAYER: игрок вне TargetMask " +
+                            $"(слой {LayerMask.LayerToName(cand.gameObject.layer)}) — обход";
                 }
                 else
                 {
-                    _lastRejectNote = $"слой {layerName} не в TargetMask";
+                    // D5: строку собираем ТОЛЬКО в диагностике — иначе на каждый
+                    // отсеянный персонаж и каждый тик восприятия идёт аллокация.
+                    if (DiagEnabled)
+                        _lastRejectNote = $"слой {LayerMask.LayerToName(cand.gameObject.layer)} " +
+                            "не в TargetMask";
                     return;
                 }
             }
@@ -1513,7 +1631,32 @@ namespace ZharkoeLeto44.AI
 
             float flatDist = FlatDistance(transform.position, point.position);
 
-            if (flatDist <= pointReachRadius || _motor.HasArrived())
+            bool reached = flatDist <= pointReachRadius;
+            if (!reached && _motor.HasArrived())
+            {
+                // HasArrived() == true и при hasPath == false — то есть «путь не
+                // построен», а не «дошли». Если путь построить не удалось —
+                // пробуем следующую точку, иначе солдат стоит навсегда.
+                if (_lastMoveSucceeded)
+                {
+                    reached = true;
+                }
+                else
+                {
+                    // Путь не построен — пробуем следующую точку, иначе солдат
+                    // стоит навсегда. Пауза между попытками, чтобы не дёргать
+                    // SetDestination каждый кадр.
+                    if (Time.time < _nextPatrolRetryTime) return;
+                    _nextPatrolRetryTime = Time.time + patrolRetryDelay;
+
+                    AdvancePatrolIndex();
+                    Transform next = patrolRoute.GetPoint(_patrolIndex);
+                    if (next != null) MoveTo(next.position);
+                    return;
+                }
+            }
+
+            if (reached)
             {
                 _waitingAtPoint = true;
                 _patrolWaitUntil = Time.time + pointWaitDuration;
@@ -1642,6 +1785,46 @@ namespace ZharkoeLeto44.AI
             }
         }
 
+        /// <summary>
+        /// Поворот корпуса на источник звука. Делаем ТОЛЬКО когда солдат стоит:
+        /// идёт — угол тела ведёт NavMeshAgent (updateRotation = true), и мотор
+        /// с ним спорил бы (тело дёргается, звук игнорируется). После досмотра
+        /// управление углом возвращаем агенту.
+        /// </summary>
+        private void UpdateLookAtSound()
+        {
+            if (_lookAtSoundUntil <= 0f) return;
+
+            // В бою/погоне угол ведёт цель, в поиске — осматривание.
+            if (State != EnemyState.Patrol && State != EnemyState.Alert)
+            {
+                _lookAtSoundUntil = 0f;
+                return;
+            }
+            if (_lookAroundPhase != LookAroundPhase.None) return;
+
+            if (Time.time < _lookAtSoundUntil)
+            {
+                if (_motor.CurrentSpeed > 0.3f)
+                {
+                    // Идёт — угол тела ведёт агент: сразу отдаём ему управление,
+                    // иначе солдат дойдёт боком.
+                    _motor.SetManualRotation(false);
+                    _motor.SetAutoRotation(true);
+                    return;
+                }
+
+                _motor.SetManualRotation(true);
+                _motor.SetAutoRotation(false);
+                _motor.FaceTowardsAtSpeed(_lookAtSoundPoint, 90f);
+                return;
+            }
+
+            _lookAtSoundUntil = 0f;
+            _motor.SetManualRotation(false);
+            _motor.SetAutoRotation(true);
+        }
+
         private void CancelLookAround()
         {
             if (_lookAroundPhase == LookAroundPhase.None) return;
@@ -1760,7 +1943,14 @@ namespace ZharkoeLeto44.AI
 
                 Vector3 point = desired;
                 if (_motor != null)
-                    _motor.SampleReachablePoint(desired, 7f, out point, true);
+                {
+                    // Точка берётся только если до неё ЕСТЬ путь: иначе солдат
+                    // встанет у стены и «проверит» точку, до которой не дойдёт.
+                    // Если ни одна точка не годится — солдат просто осматривается
+                    // на месте (UpdateSearch умеет и так).
+                    if (!_motor.SampleReachablePoint(desired, 7f, out point, true))
+                        continue;
+                }
 
                 _searchPoints[_searchPointTotal++] = point;
             }
@@ -1785,9 +1975,25 @@ namespace ZharkoeLeto44.AI
             _motor.SetSprintMode(true);
             bool recentlyVisible = Time.time - _lastTargetSeenTime <= perceptionInterval * 2f;
 
-            Vector3 chaseGoal = useSquadTactics && recentlyVisible
-                ? InfantrySquad.AdjustChaseGoal(this, _lastKnownTargetPosition)
-                : _lastKnownTargetPosition;
+            Vector3 chaseGoal = _lastKnownTargetPosition;
+            if (useSquadTactics && recentlyVisible)
+            {
+                // Раскладка строя в погоне — тоже тяжёлый O(N)-обход по отряду,
+                // поэтому ~5 Гц со сдвигом (D4), а не каждый кадр.
+                if (Time.time >= _nextChaseGoalTime)
+                {
+                    _nextChaseGoalTime = Time.time + FormationRefreshInterval +
+                        Random.Range(0f, FormationRefreshJitter);
+                    _chaseGoalOffset = InfantrySquad.AdjustChaseGoal(this, _lastKnownTargetPosition) -
+                        _lastKnownTargetPosition;
+                }
+                chaseGoal += _chaseGoalOffset;
+            }
+            else
+            {
+                _chaseGoalOffset = Vector3.zero;
+                _nextChaseGoalTime = 0f;
+            }
 
             // Предсказание ухода цели: идём не в точку, а туда, куда она УХОДИТ.
             if (recentlyVisible && _targetVelocity.sqrMagnitude > 0.25f && chaseLeadTime > 0f)
@@ -1914,7 +2120,7 @@ namespace ZharkoeLeto44.AI
                 _motor.FaceTowardsAtSpeed(_target.position, combatTurnSpeed);
             }
 
-            UpdateFiring(distance, _motor.CurrentSpeed, moving);
+            UpdateFiring(distance, _motor.CurrentSpeed);
         }
 
         /// <summary>
@@ -2010,7 +2216,7 @@ namespace ZharkoeLeto44.AI
             }
 
             // Стреляет только тот, кто держит жетон атаки (лимит на отряд).
-            if (HasFireToken) UpdateFiring(distance, _motor.CurrentSpeed, moving);
+            if (HasFireToken) UpdateFiring(distance, _motor.CurrentSpeed);
         }
 
         /// <summary>Манёвр: рывок на 8–12 м. Не стреляет, смотрит по ходу.</summary>
@@ -2086,7 +2292,7 @@ namespace ZharkoeLeto44.AI
             }
 
             if (_coverPeeking && HasFireToken)
-                UpdateFiring(distance, 0f, false);
+                UpdateFiring(distance, 0f);
         }
 
         /// <summary>
@@ -2123,10 +2329,26 @@ namespace ZharkoeLeto44.AI
             Vector3 right = Vector3.Cross(Vector3.up, forward);
 
             // 2. Своё место в строю: боковой сдвиг + небольшой разброс по глубине.
+            //    Раскладка и разведение — тяжёлые O(N)-обходы по отряду, поэтому
+            //    считаем их ~5 Гц со сдвигом (D4), а не каждый кадр.
             float lateral = 0f;
             float depth = 0f;
+            Vector3 separation = Vector3.zero;
             if (useSquadTactics)
-                InfantrySquad.ComputeFormationSlot(this, targetPosition, right, out lateral, out depth);
+            {
+                if (Time.time >= _nextFormationTime)
+                {
+                    _nextFormationTime = Time.time + FormationRefreshInterval +
+                        Random.Range(0f, FormationRefreshJitter);
+                    InfantrySquad.ComputeFormationSlot(this, targetPosition, right,
+                        out _formationLateral, out _formationDepth);
+                    // Смещение мягкого разведения не зависит от якоря — кешируем и его.
+                    _separationOffset = InfantrySquad.ApplySeparation(this, Vector3.zero);
+                }
+                lateral = _formationLateral;
+                depth = _formationDepth;
+                separation = _separationOffset;
+            }
 
             // Боковой сдвиг НЕ режем: это место солдата в строю. Раньше клип
             // 1.5 м стягивал весь отряд в узкую колонну — они бегали кучей.
@@ -2143,8 +2365,12 @@ namespace ZharkoeLeto44.AI
 
             // 4. Мягкое расхождение: если кто-то подошёл слишком близко —
             //    якорь сдвигается вбок (не рывок, а плавный уход).
-            if (useSquadTactics)
-                anchor = InfantrySquad.ApplySeparation(this, anchor);
+            anchor += separation;
+
+            // 4b. Якорь обязан лежать на NavMesh: иначе солдат бесконечно идёт
+            //     в стену и не доходит до позиции. Поправка кешируется как
+            //     смещение, поэтому якорь продолжает плавно идти за целью.
+            anchor = ClampAnchorToNavMesh(anchor);
 
             // 5. Якорь догоняет цель с ограниченной скоростью.
             //    Но если цель видна и стрелять уже можно — якорь ЗАМОРАЖИВАЕТСЯ:
@@ -2171,6 +2397,38 @@ namespace ZharkoeLeto44.AI
         }
 
         /// <summary>
+        /// Поправка боевого якоря на NavMesh. SamplePosition (без проверки пути)
+        /// дёшев, поэтому сэмплим ~5 Гц со сдвигом и храним ПОПРАВКУ как
+        /// смещение: так якорь продолжает плавно идти за целью, а не «прыгает»
+        /// на точку сэмпла. Без этого солдат может бесконечно идти в стену.
+        /// </summary>
+        private Vector3 ClampAnchorToNavMesh(Vector3 anchor)
+        {
+            if (_motor == null || _motor.Mode != EnemyMotor.MotorMode.NavMesh) return anchor;
+
+            if (Time.time >= _nextAnchorCheckTime)
+            {
+                _nextAnchorCheckTime = Time.time + AnchorCheckInterval +
+                    Random.Range(0f, AnchorCheckJitter);
+
+                if (UnityEngine.AI.NavMesh.SamplePosition(anchor,
+                        out UnityEngine.AI.NavMeshHit hit,
+                        AnchorSampleRadius, UnityEngine.AI.NavMesh.AllAreas))
+                {
+                    Vector3 correction = hit.position - anchor;
+                    correction.y = 0f;   // высота на NavMesh своя
+                    _anchorNavCorrection = correction;
+                }
+                else
+                {
+                    _anchorNavCorrection = Vector3.zero;
+                }
+            }
+
+            return anchor + _anchorNavCorrection;
+        }
+
+        /// <summary>
         /// Стадия темпа схватки — ОБЩАЯ ДЛЯ ОТРЯДА и зависящая от потерянной доли
         /// здоровья цели (CharacterHealth.NormalizedHealth). Раньше стадия росла от
         /// числа попаданий, а HP у всех общий — «темп» нарастал у всего отряда
@@ -2186,6 +2444,8 @@ namespace ZharkoeLeto44.AI
             {
                 _engageStartTime = Time.time;
                 _engageOpen = true;
+                // Базовое здоровье = восстановленному: темп снова с нуля.
+                _engageHpBaseline = Mathf.Clamp01(_targetHealth.NormalizedHealth);
             }
             _lastTargetHp = _targetHealth.CurrentHealth;
 
@@ -2197,12 +2457,20 @@ namespace ZharkoeLeto44.AI
             }
 
             float normalized = Mathf.Clamp01(_targetHealth.NormalizedHealth);
-            _engageStage = Mathf.Clamp(Mathf.FloorToInt((1f - normalized) * stages),
-                0, stages - 1);
+            // D8: стадия = floor((1 - NormalizedHealth) * stages) — считаем от
+            // ПОТЕРИ здоровья с начала схватки. Базовое здоровье = 1 → формула
+            // ровно та же. Базовое < 1 (схватка началась после ран, либо прошло
+            // engageResetDelay вне боя) → новая схватка стартует с «царапины»,
+            // а стадия растёт по мере новых потерь. Раньше стадия считалась от
+            // АБСОЛЮТНОГО HP каждый кадр, и сброс по engageResetDelay не давал
+            // никакого эффекта.
+            float baseline = Mathf.Clamp(_engageHpBaseline, 0.05f, 1f);
+            float lost = Mathf.Clamp01((baseline - normalized) / baseline);
+            _engageStage = Mathf.Clamp(Mathf.FloorToInt(lost * stages), 0, stages - 1);
             if (_engageStage > 0) _engageOpen = false;
         }
 
-        private void UpdateFiring(float distance, float selfSpeed, bool moving)
+        private void UpdateFiring(float distance, float selfSpeed)
         {
             if (weapon == null || weapon.IsReloading || Time.time < _nextBurstTime)
                 return;
@@ -2213,7 +2481,11 @@ namespace ZharkoeLeto44.AI
             if (distance > weapon.Range) return;
 
             // Идёт — не стреляет: корпус смотрит по ходу, очередь ушла бы мимо.
-            if (moving || selfSpeed > 0.35f || _motor.WantsToMove) return;
+            // Проверяем ФАКТИЧЕСКОЕ движение и приказ двигаться (WantsToMove), а не
+            // намерение «moving». Раньше солдат с недостижимым боевым якорем вечно
+            // числился идущим (якорь недостижим → anchorDistance не сходится) и
+            // НИКОГДА не стрелял.
+            if (selfSpeed > 0.35f || _motor.WantsToMove) return;
 
             // Не стрелять в доводке: огонь только когда развернулся на игрока.
             // Серия не сгорает — при доводке очередь продолжится с того же места.
@@ -2255,7 +2527,13 @@ namespace ZharkoeLeto44.AI
             bool clearShot = weapon.HasClearShot(aimPoint, gameObject, out bool blockedByAlly);
             _blockedByAlly = blockedByAlly;
             if (!clearShot && !blockedByAlly)
+            {
+                // Линию перекрыла геометрия (стена/укрытие) — стрелять нельзя.
+                // Просим отряд сменить позицию: иначе солдат молча стоит за
+                // стеной и не стреляет вообще.
+                WantsReposition = true;
                 return;
+            }
 
             UpdateSpreadModel(distance, selfSpeed);
 
@@ -2349,7 +2627,7 @@ namespace ZharkoeLeto44.AI
 
         private Vector3 ComputeAimPoint(float distance, float selfSpeed)
         {
-            Vector3 basePoint = GetTargetAimPoint(_target);
+            Vector3 basePoint = CurrentTargetAimPoint();
 
             float lead = leadAccuracy * 0.15f;
             basePoint += _targetVelocity * lead;
@@ -2398,10 +2676,16 @@ namespace ZharkoeLeto44.AI
                 _targetVelocity = Vector3.zero;
                 // CharacterHealth лежит либо на самом объекте, либо выше по иерархии.
                 _targetHealth = target.GetComponentInParent<CharacterHealth>();
+                // Новая цель — новая схватка: темп считаем от её здоровья.
+                _engageHpBaseline = _targetHealth != null
+                    ? Mathf.Clamp01(_targetHealth.NormalizedHealth)
+                    : 1f;
                 // Новую цель нельзя оценивать по LOS-кешу старой.
                 _nextLosCheckTime = 0f;
                 _cachedCanSee = false;
                 _losBlockedByAlly = false;
+                _targetHiddenSince = float.NegativeInfinity;
+                _suddenDelayApplied = false;
                 if (debugLogging)
                     Debug.Log($"[EnemyAI] {name}: новая цель «{target.name}»", this);
             }
@@ -2529,6 +2813,8 @@ namespace ZharkoeLeto44.AI
             _targetVelocity = Vector3.zero;
             _prevTargetPosition = Vector3.zero;
             _targetVisibleLastTick = false;
+            _targetHiddenSince = float.NegativeInfinity;
+            _suddenDelayApplied = false;
             // Сброс LOS-кеша: иначе после потери цели новый таргет
             // 0.1-0.2 сек считается невидимым по старому результату.
             _nextLosCheckTime = 0f;
@@ -2549,7 +2835,7 @@ namespace ZharkoeLeto44.AI
             if (Time.time < _nextLosCheckTime) return _cachedCanSee;
             _nextLosCheckTime = Time.time + _losCheckInterval;
 
-            Vector3 chest = GetTargetAimPoint(_target);
+            Vector3 chest = CurrentTargetAimPoint();
             Vector3 toTarget = chest - eyePoint.position;
             if (toTarget.sqrMagnitude > viewDistance * viewDistance)
             {
@@ -2574,6 +2860,18 @@ namespace ZharkoeLeto44.AI
                 TrackTargetKinematics(_target.position);
             }
             return visible;
+        }
+
+        /// <summary>
+        /// Точка прицеливания по ТЕКУЩЕЙ цели. Берёт уже кешированный
+        /// CharacterHealth, поэтому в горячем пути (LOS-тик 10 Гц + каждый
+        /// выстрел) НЕ вызывается GetComponentInParent — он аллоцирует (D5).
+        /// </summary>
+        private Vector3 CurrentTargetAimPoint()
+        {
+            if (_target == null) return transform.position;
+            if (_targetHealth != null) return GetTargetAimPoint(_targetHealth);
+            return GetTargetAimPoint(_target);
         }
 
         private Vector3 GetTargetAimPoint(Transform target)
@@ -2641,7 +2939,12 @@ namespace ZharkoeLeto44.AI
 
         private void MoveTo(Vector3 destination)
         {
-            _motor.MoveTo(destination);
+            // Motor.MoveTo возвращает false, если NavMesh не смог построить путь
+            // (точка вне меша / за стеной). В Fallback-режиме мотор возвращает
+            // allowFallbackMovement — там считаем приказ выполненным.
+            bool moved = _motor.MoveTo(destination);
+            _lastMoveSucceeded = moved || _motor.Mode != EnemyMotor.MotorMode.NavMesh;
+
             _lastPathDestination = destination;
             _hasPathDestination = true;
             _nextPathRefreshTime = Time.time + pathRefreshInterval;
@@ -2678,6 +2981,10 @@ namespace ZharkoeLeto44.AI
                     _engageOpen = true;
                     _engageStartTime = Time.time;
                     _lastTargetHp = _targetHealth != null ? _targetHealth.CurrentHealth : 0f;
+                    // Новая схватка — темп с нуля: базовое здоровье цели = текущее.
+                    _engageHpBaseline = _targetHealth != null
+                        ? Mathf.Clamp01(_targetHealth.NormalizedHealth)
+                        : 1f;
                 }
             }
             if (previous == EnemyState.Combat && newState != EnemyState.Combat)
@@ -2705,7 +3012,7 @@ namespace ZharkoeLeto44.AI
 
                 case EnemyState.Alert:
                     _motor.SetSpeed(alertSpeed);
-            _motor.SetSprintMode(false);
+                    _motor.SetSprintMode(false);
                     if (previous == EnemyState.Patrol && voice != null) voice.PlayAlert();
                     break;
 
@@ -2794,9 +3101,19 @@ namespace ZharkoeLeto44.AI
             _suspicionPoint = heardPosition;
             _searchCenter = heardPosition;
             _hasSuspicion = true;
-            _lastNoiseInfo = $"шум {distance:F0}м (громк. {heard:P0})";
+            // D5: строка — только для диагностики. Иначе на каждый услышанный
+            // шум у каждого солдата идёт аллокация (выстрелы = 8/с на стрелка).
+            if (DiagEnabled)
+                _lastNoiseInfo = $"шум {distance:F0}м (громк. {heard:P0})";
             if (falloff > 0.5f)
-                _motor.FaceTowardsAtSpeed(heardPosition, 90f);
+            {
+                // Корпус доворачиваем к звуку. Сам поворот ведёт UpdateLookAtSound:
+                // если дёрнуть мотор прямо здесь, NavMeshAgent (updateRotation)
+                // перезапишет угол после Update — тело дёрнется и не посмотрит
+                // в сторону звука.
+                _lookAtSoundPoint = heardPosition;
+                _lookAtSoundUntil = Time.time + 1.2f;
+            }
 
             if (debugLogging && _target == null)
                 Debug.Log($"[EnemyAI] {name}: услышал {_lastNoiseInfo} (aware={_awareness:F2})", this);

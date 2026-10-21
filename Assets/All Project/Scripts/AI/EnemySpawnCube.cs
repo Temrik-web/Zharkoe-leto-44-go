@@ -39,6 +39,7 @@ public class EnemySpawnCube : MonoBehaviour
     private bool hasSpawned;
     private float doneUntil;
     private float nextPlayerWarnTime;
+    private float nextPlayerSearchTime;
     private GUIStyle _hintStyle;
     private readonly List<GameObject> _spawned = new();
 
@@ -69,8 +70,15 @@ public class EnemySpawnCube : MonoBehaviour
     {
         if (cachedPlayer == null)
         {
-            try { cachedPlayer = GameObject.FindGameObjectWithTag("Player"); }
-            catch { cachedPlayer = null; }
+            // Поиск игрока — полный скан сцены, поэтому не каждый кадр:
+            // не нашли — ждём полсекунды и пробуем снова.
+            if (Time.time >= nextPlayerSearchTime)
+            {
+                nextPlayerSearchTime = Time.time + 0.5f;
+                try { cachedPlayer = GameObject.FindGameObjectWithTag("Player"); }
+                catch { cachedPlayer = null; }
+            }
+
             if (cachedPlayer == null)
             {
                 if (Time.time >= nextPlayerWarnTime)
@@ -93,6 +101,9 @@ public class EnemySpawnCube : MonoBehaviour
 
     public void EnableEnemies()
     {
+        // Один раз: иначе внешний вызов (сценарий/UI) даст двойной спавн отряда.
+        if (spawnOnce && hasSpawned) return;
+
         if (germanPrefab != null) SpawnGermans();
         else EnableSceneEnemies();
 

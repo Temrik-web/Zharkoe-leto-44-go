@@ -56,8 +56,10 @@ namespace ZharkoeLeto44.AI
         private bool isFrozen;
         private Collider[] ownColliders;
         private Vector3[] groundCheckPoints;
+        private readonly Collider[] _overlapBuffer = new Collider[16];
         private int rescueAttempts;
         private bool initialized;
+        private bool _centerOfMassAdjusted;
 
         public void Initialize(float gravityDelay, Vector3 launchVelocity, Vector3 spin,
                                LayerMask groundMask, float lifetime, bool applySpin = true)
@@ -108,8 +110,16 @@ namespace ZharkoeLeto44.AI
                 Renderer rend = GetComponentInChildren<Renderer>();
                 if (rend != null)
                 {
-                    box.size = rend.bounds.size;
-                    box.center = rend.bounds.center - transform.position;
+                    // bounds — МИРОВЫЕ габариты, а box.size — ЛОКАЛЬНЫЕ.
+                    // Раньше мировые размеры писались прямо в локальное свойство:
+                    // при масштабе объекта ≠ 1 (а у копии MP40 он ≈ 200) коллайдер
+                    // выходил в сотни раз больше модели.
+                    box.center = transform.InverseTransformPoint(rend.bounds.center);
+                    Vector3 localSize = transform.InverseTransformVector(rend.bounds.size);
+                    box.size = new Vector3(
+                        Mathf.Max(0.01f, Mathf.Abs(localSize.x)),
+                        Mathf.Max(0.01f, Mathf.Abs(localSize.y)),
+                        Mathf.Max(0.01f, Mathf.Abs(localSize.z)));
                 }
                 else
                 {
@@ -123,8 +133,11 @@ namespace ZharkoeLeto44.AI
                 foreach (var col in ownColliders) col.material = physicMaterial;
             }
 
-            if (!autoCenterOfMass)
+            // Смещение центра масс — ОДИН раз. PrepareBody зовут и Awake, и
+            // Initialize, а `centerOfMass +=` накапливало бы смещение вдвое.
+            if (!autoCenterOfMass && !_centerOfMassAdjusted)
             {
+                _centerOfMassAdjusted = true;
                 body.centerOfMass += centerOfMassOffset;
             }
 
@@ -164,12 +177,19 @@ namespace ZharkoeLeto44.AI
 
                 if (hasDead)
                 {
-                    var alive = new System.Collections.Generic.List<Collider>(ownColliders.Length);
+                    // Без List: один массив вместо List+ToArray (аллокаций меньше).
+                    int alive = 0;
+                    foreach (var col in ownColliders)
+                        if (col != null) alive++;
+
+                    var trimmed = new Collider[alive];
+                    int write = 0;
                     foreach (var col in ownColliders)
                     {
-                        if (col != null) alive.Add(col);
+                        if (col == null) continue;
+                        trimmed[write++] = col;
                     }
-                    ownColliders = alive.ToArray();
+                    ownColliders = trimmed;
                 }
             }
 
@@ -244,6 +264,8 @@ namespace ZharkoeLeto44.AI
             body.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
 
             Vector3 vel = initialVelocity + Random.insideUnitSphere * velocityRandomness;
+            // Вертикаль не уводим вниз: иначе оружие стартует в пол и проваливается.
+            if (vel.y < 0f) vel.y = 0f;
             body.AddForce(vel * body.mass, ForceMode.Impulse);
             if (applySpin)
                 body.angularVelocity = initialSpin + Random.insideUnitSphere * spinRandomness;
@@ -290,10 +312,14 @@ namespace ZharkoeLeto44.AI
         private bool HasForeignOverlap(Vector3 center, Vector3 extents)
         {
             if (extents.sqrMagnitude <= 0f) return false;
-            Collider[] overlaps = Physics.OverlapBox(center, extents,
+
+            // D5: без аллокаций. Physics.OverlapBox создавал новый Collider[]
+            // на каждый вызов (до 21 раза за дроп, из Update -> EnableGravity).
+            int count = Physics.OverlapBoxNonAlloc(center, extents, _overlapBuffer,
                 transform.rotation, groundMask, QueryTriggerInteraction.Ignore);
-            foreach (var other in overlaps)
+            for (int i = 0; i < count; i++)
             {
+                Collider other = _overlapBuffer[i];
                 if (other == null) continue;
                 if (other.transform != transform && !other.transform.IsChildOf(transform))
                     return true;

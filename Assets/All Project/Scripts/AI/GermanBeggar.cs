@@ -52,6 +52,7 @@ public class GermanBeggar : MonoBehaviour
     private EnemyAnimator animatorDriver;
     private Animator plainAnimator;
     private bool standPoseActive;
+    private bool peacefulRefusalLogged;
     private Vector3 leaveTarget;
     private bool hasLeaveTarget;
     private Vector3 walkTarget;
@@ -112,7 +113,10 @@ public class GermanBeggar : MonoBehaviour
             // Путь потерялся — идём заново. Проверку «дошёл» ведём по расстоянию:
             // Motor.HasArrived() врёт, когда у агента нет пути (hasPath == false).
             if (Motor != null && !Motor.HasDestination)
+            {
+                GiveRotationToAgent();
                 Motor.MoveTo(walkTarget);
+            }
 
             DriveLocomotion(true);
 
@@ -246,6 +250,7 @@ public class GermanBeggar : MonoBehaviour
         if (Motor.SampleReachablePoint(destination, 6f, out Vector3 reachable))
             walkTarget = reachable;
         Motor.SetSpeed(walkSpeed);
+        GiveRotationToAgent();
         Motor.MoveTo(walkTarget);
     }
 
@@ -277,6 +282,18 @@ public class GermanBeggar : MonoBehaviour
         if (Motor != null) Motor.Stop();
     }
 
+    /// <summary>
+    /// Углом тела управляет агент: он ведёт немца по маршруту.
+    /// Нужно перед КАЖДЫМ приказом движения — пока агент не рулит углом,
+    /// солдат едет боком.
+    /// </summary>
+    void GiveRotationToAgent()
+    {
+        if (Motor == null) return;
+        Motor.SetManualRotation(false);
+        Motor.SetAutoRotation(true);
+    }
+
     /// <summary>Смотреть на игрока.</summary>
     public void FacePlayer()
     {
@@ -286,6 +303,10 @@ public class GermanBeggar : MonoBehaviour
             catch { cachedPlayer = null; }
         }
         if (cachedPlayer == null || Motor == null) return;
+        // Корпус ведём сами: NavMeshAgent (updateRotation) перезаписал бы наш
+        // поворот после Update — тело дёргалось бы между «к игроку» и «по пути».
+        Motor.SetManualRotation(true);
+        Motor.SetAutoRotation(false);
         Motor.FaceTowardsAtSpeed(cachedPlayer.transform.position, faceTurnSpeed);
     }
 
@@ -319,7 +340,12 @@ public class GermanBeggar : MonoBehaviour
         if (stayPeaceful)
         {
             // Режим «просто поговорить»: немец стоит у двери и в бой не идёт.
-            Debug.Log($"[GermanBeggar] {name}: stayPeaceful включён — в бой не вступаю, стою у двери.", this);
+            // Лог — один раз: сценарий может звать GoHostile каждый кадр.
+            if (!peacefulRefusalLogged)
+            {
+                peacefulRefusalLogged = true;
+                Debug.Log($"[GermanBeggar] {name}: stayPeaceful включён — в бой не вступаю, стою у двери.", this);
+            }
             return;
         }
 
@@ -357,6 +383,7 @@ public class GermanBeggar : MonoBehaviour
         leaveTarget = target;
         hasLeaveTarget = true;
         Motor.SetSpeed(walkSpeed);
+        GiveRotationToAgent();
         Motor.MoveTo(target);
         leaveArriveDistance = arriveDistance;
     }

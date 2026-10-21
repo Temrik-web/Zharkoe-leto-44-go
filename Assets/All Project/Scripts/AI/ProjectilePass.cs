@@ -40,7 +40,16 @@ public static class ProjectilePass
     public static event Action<Shot> ShotFired;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-    private static void ResetStatics() => ShotFired = null;
+    private static void ResetStatics()
+    {
+        // См. NoiseSystem.ResetStatics: при входе в Play Mode без перезагрузки
+        // сцены живые подписки обнуляются, и слушатели молча отваливаются.
+        if (ShotFired != null)
+            Debug.LogWarning("[ProjectilePass] При входе в Play Mode сброшены живые подписки на ShotFired. " +
+                "Если сцена не перезагружается (Edit → Project Settings → Editor → Enter Play Mode Options), " +
+                "слушатели должны переподписаться в OnEnable.");
+        ShotFired = null;
+    }
 
     public static void Emit(Shot shot) => ShotFired?.Invoke(shot);
 }

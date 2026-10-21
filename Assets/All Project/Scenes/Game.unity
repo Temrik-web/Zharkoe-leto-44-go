@@ -1955,6 +1955,8 @@ MonoBehaviour:
   whizzSource: {fileID: 0}
   whizzClips: []
   whizzCooldown: 0.08
+  suppressionCooldown: 0.2
+  maxSuppressionPerShot: 0.6
   enemyAI: {fileID: 65208807}
 --- !u!114 &65208807
 MonoBehaviour:
@@ -2048,6 +2050,7 @@ MonoBehaviour:
   spreadSeenMultiplier: 0.8
   spreadSettleTime: 3
   suddenTargetReactionDelay: 0.3
+  suddenTargetMinHidden: 0.2
   chaseLeadTime: 1.2
   chaseLeadMaxDistance: 6
   contactShareDelay: {x: 0.3, y: 1}
@@ -21816,10 +21819,12 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   nearMissRadius: 2.5
-  isPlayer: 0
-  whizzSource: {fileID: 0}
+  isPlayer: 1
+  whizzSource: {fileID: 746973029}
   whizzClips: []
   whizzCooldown: 0.08
+  suppressionCooldown: 0.2
+  maxSuppressionPerShot: 0.6
   enemyAI: {fileID: 0}
 --- !u!82 &746973029
 AudioSource:
@@ -23850,6 +23855,8 @@ MonoBehaviour:
   whizzSource: {fileID: 0}
   whizzClips: []
   whizzCooldown: 0.08
+  suppressionCooldown: 0.2
+  maxSuppressionPerShot: 0.6
   enemyAI: {fileID: 789273443}
 --- !u!114 &789273443
 MonoBehaviour:
@@ -23943,6 +23950,7 @@ MonoBehaviour:
   spreadSeenMultiplier: 0.8
   spreadSettleTime: 3
   suddenTargetReactionDelay: 0.3
+  suddenTargetMinHidden: 0.2
   chaseLeadTime: 1.2
   chaseLeadMaxDistance: 6
   contactShareDelay: {x: 0.3, y: 1}
@@ -37855,6 +37863,8 @@ MonoBehaviour:
   whizzSource: {fileID: 0}
   whizzClips: []
   whizzCooldown: 0.08
+  suppressionCooldown: 0.2
+  maxSuppressionPerShot: 0.6
   enemyAI: {fileID: 1175762489}
 --- !u!114 &1175762489
 MonoBehaviour:
@@ -37948,6 +37958,7 @@ MonoBehaviour:
   spreadSeenMultiplier: 0.8
   spreadSettleTime: 3
   suddenTargetReactionDelay: 0.3
+  suddenTargetMinHidden: 0.2
   chaseLeadTime: 1.2
   chaseLeadMaxDistance: 6
   contactShareDelay: {x: 0.3, y: 1}
@@ -51843,6 +51854,8 @@ MonoBehaviour:
   whizzSource: {fileID: 0}
   whizzClips: []
   whizzCooldown: 0.08
+  suppressionCooldown: 0.2
+  maxSuppressionPerShot: 0.6
   enemyAI: {fileID: 1623937727}
 --- !u!114 &1623937727
 MonoBehaviour:
@@ -51936,6 +51949,7 @@ MonoBehaviour:
   spreadSeenMultiplier: 0.8
   spreadSettleTime: 3
   suddenTargetReactionDelay: 0.3
+  suddenTargetMinHidden: 0.2
   chaseLeadTime: 1.2
   chaseLeadMaxDistance: 6
   contactShareDelay: {x: 0.3, y: 1}
@@ -58732,7 +58746,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   team: 0
-  maximumHealth: 3.2131231e+13
+  maximumHealth: 100
 --- !u!114 &1743753206
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -64359,6 +64373,8 @@ MonoBehaviour:
   whizzSource: {fileID: 0}
   whizzClips: []
   whizzCooldown: 0.08
+  suppressionCooldown: 0.2
+  maxSuppressionPerShot: 0.6
   enemyAI: {fileID: 1903919459}
 --- !u!114 &1903919459
 MonoBehaviour:
@@ -64452,6 +64468,7 @@ MonoBehaviour:
   spreadSeenMultiplier: 0.8
   spreadSettleTime: 3
   suddenTargetReactionDelay: 0.3
+  suddenTargetMinHidden: 0.2
   chaseLeadTime: 1.2
   chaseLeadMaxDistance: 6
   contactShareDelay: {x: 0.3, y: 1}

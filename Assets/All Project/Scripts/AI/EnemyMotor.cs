@@ -1,6 +1,5 @@
 using UnityEngine;
 using UnityEngine.AI;
-using System.Collections.Generic;
 
 namespace ZharkoeLeto44.AI
 {
@@ -188,8 +187,6 @@ namespace ZharkoeLeto44.AI
         private readonly Collider[] _obstacleCheckBuffer = new Collider[8];
         private readonly RaycastHit[] _walkabilityHits = new RaycastHit[32];
         private readonly RaycastHit[] _groundHits = new RaycastHit[32];
-        private static readonly IComparer<RaycastHit> HitDistanceComparer =
-            Comparer<RaycastHit>.Create((a, b) => a.distance.CompareTo(b.distance));
         private static readonly float[] RearAvoidanceAngles = { 135f, -135f, 180f };
 
         private bool AgentUsable => _agent != null && _agent.enabled && _agent.isOnNavMesh;
@@ -303,6 +300,8 @@ namespace ZharkoeLeto44.AI
             _blockedCompletely = false;
             _destinationSetTime = Time.time;
             // Новый приказ на движение — тело снова ведёт агент (по маршруту).
+            // Ручной поворот (SetManualRotation) снимаем: приказ на движение
+            // означает, что корпус ведёт агент, а не ИИ.
             SetManualRotation(false);
 
             if (Mode == MotorMode.NavMesh)
@@ -460,19 +459,25 @@ namespace ZharkoeLeto44.AI
         public void SetManualRotation(bool manual)
         {
             _manualRotation = manual;
-            if (_agent != null) _agent.updateRotation = _autoRotation && !manual;
+            // ПОСЛЕДНИЙ ВЫЗОВ ВЫИГРЫВАЕТ: SetManualRotation(true) — тело ведёт ИИ,
+            // SetAutoRotation(true) — тело ведёт агент. Раньше тут было
+            // «auto && !manual», и SetAutoRotation(true) МОЛЧА НИЧЕГО НЕ ДЕЛАЛ,
+            // если manual уже стоял (например, ИИ держал ручной поворот в Search).
+            if (_agent != null) _agent.updateRotation = !manual && _autoRotation;
+        }
+        public void SetAutoRotation(bool enabled)
+        {
+            _autoRotation = enabled;
+            // ВАЖНО: enabled=true ВСЕГДА включает доворот агента, даже если раньше
+            // стоял ручной поворот. Иначе правило «идёт — SetAutoRotation(true)»
+            // не работало: солдат шёл боком/задом по маршруту.
+            if (_agent != null) _agent.updateRotation = enabled;
         }
 
         public static float EaseTurnSpeed(Quaternion current, Quaternion target, float maxSpeed)
         {
             float angle = Quaternion.Angle(current, target);
             return Mathf.Max(1f, maxSpeed) * Mathf.Clamp01(angle / 40f + 0.12f);
-        }
-
-        public void SetAutoRotation(bool enabled)
-        {
-            _autoRotation = enabled;
-            if (_agent != null) _agent.updateRotation = enabled && !_manualRotation;
         }
 
         public void Disable()
@@ -703,8 +708,15 @@ namespace ZharkoeLeto44.AI
                     _verticalVelocity = 0f;
                     _isGrounded = true;
 
-                    if (_controller != null && _controller.enabled)
-                        _controller.enabled = false;
+                    // CharacterController в режиме NavMesh ОСТАЁТСЯ включённым:
+                    // на префабе врага (Enemy.prefab / GermanSoldier.prefab) это
+                    // ЕДИНСТВЕННЫЙ коллайдер тела — хитбокс и физическое тело.
+                    // Раньше здесь он выключался, и враг, ушедший в Fallback и
+                    // вернувшийся на навмеш, ТЕРЯЛ хитбокс (становился неуязвимым
+                    // и пропускал игрока сквозь себя). Двигает тело агент, а
+                    // контроллер в этом режиме только стоит как коллайдер.
+                    if (_controller != null && !_controller.enabled)
+                        _controller.enabled = true;
 
                     if (HasDestination) MoveTo(_destination);
                 }
@@ -717,8 +729,10 @@ namespace ZharkoeLeto44.AI
                 _stopping = false;
                 _verticalVelocity = 0f;
                 _isGrounded = true;
-                if (_controller != null && _controller.enabled)
-                    _controller.enabled = false;
+                // Контроллер НЕ выключаем: это единственный коллайдер тела врага
+                // (хитбокс). См. комментарий в ветке выше.
+                if (_controller != null && !_controller.enabled)
+                    _controller.enabled = true;
                 if (HasDestination) MoveTo(_destination);
                 return;
             }
@@ -813,8 +827,11 @@ namespace ZharkoeLeto44.AI
                         desiredDirection = clearDirection;
                         hasDirection = true;
 
-                        if (_autoRotation)
+                        if (_autoRotation && !_manualRotation)
                         {
+                            // Тело ведёт агент. Если ИИ сейчас рулит корпусом сам
+                            // (SetManualRotation) — не доворачиваем: иначе два
+                            // писателя transform.rotation в одном кадре.
                             Quaternion target = Quaternion.LookRotation(clearDirection, Vector3.up);
                             transform.rotation = Quaternion.RotateTowards(
                                 transform.rotation, target,
@@ -960,19 +977,16 @@ namespace ZharkoeLeto44.AI
         {
             Vector3 origin = new(position.x, footY + stepHeight + bodyRadius, position.z);
 
+            // D5: без аллокаций. Раньше при переполнении буфера вызывался
+            // Physics.SphereCastAll → новый массив КАЖДЫЙ кадр (GC).
+            // Буфера в 32 хитта хватает: для ответа «есть ли препятствие» этого
+            // достаточно, а лишние хитты могли бы только добавить препятствия.
             int hitCount = Physics.SphereCastNonAlloc(origin, bodyRadius, direction,
                 _walkabilityHits, lookAheadDistance, obstacleMask, QueryTriggerInteraction.Ignore);
-            RaycastHit[] hits = _walkabilityHits;
-            if (hitCount == _walkabilityHits.Length)
-            {
-                hits = Physics.SphereCastAll(origin, bodyRadius, direction,
-                    lookAheadDistance, obstacleMask, QueryTriggerInteraction.Ignore);
-                hitCount = hits.Length;
-            }
 
             for (int i = 0; i < hitCount; i++)
             {
-                RaycastHit hit = hits[i];
+                RaycastHit hit = _walkabilityHits[i];
                 if (hit.collider.transform.root == transform.root) continue;
                 if (hit.collider.bounds.max.y - footY <= stepHeight) continue;
                 return false;
@@ -997,24 +1011,31 @@ namespace ZharkoeLeto44.AI
                 return true;
             }
 
+            // D5: без аллокаций и без сортировки. Раньше здесь был
+            // Physics.RaycastAll (новый массив каждый кадр) + Array.Sort.
+            // Теперь ближайший ВАЛИДНЫЙ хит ищем сами по буферу.
             int hitCount = Physics.RaycastNonAlloc(from, Vector3.down, _groundHits,
                 distance, groundMask, QueryTriggerInteraction.Ignore);
-            RaycastHit[] hits = _groundHits;
-            if (hitCount == _groundHits.Length)
-            {
-                hits = Physics.RaycastAll(from, Vector3.down, distance, groundMask,
-                    QueryTriggerInteraction.Ignore);
-                hitCount = hits.Length;
-            }
-            System.Array.Sort(hits, 0, hitCount, HitDistanceComparer);
+
+            float bestDistance = float.MaxValue;
+            bool found = false;
+            Vector3 bestPoint = from;
 
             for (int i = 0; i < hitCount; i++)
             {
-                RaycastHit candidate = hits[i];
+                RaycastHit candidate = _groundHits[i];
                 if (candidate.collider.transform.root == transform.root) continue;
                 if (Vector3.Angle(candidate.normal, Vector3.up) > maximumSlope) continue;
+                if (candidate.distance >= bestDistance) continue;
 
-                point = candidate.point;
+                bestDistance = candidate.distance;
+                bestPoint = candidate.point;
+                found = true;
+            }
+
+            if (found)
+            {
+                point = bestPoint;
                 return true;
             }
 

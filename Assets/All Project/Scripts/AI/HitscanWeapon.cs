@@ -305,7 +305,11 @@ namespace ZharkoeLeto44.AI
 
             CharacterHealth ownerHealth = owner.GetComponentInParent<CharacterHealth>();
             _ownerRoot = ownerHealth != null ? ownerHealth.gameObject : owner;
-            if (ownerHealth != null) _ownerTeam = ownerHealth.Team;
+            // Команда — ТОЛЬКО из CharacterHealth владельца (D6). Если у владельца
+            // нет CharacterHealth, команда неизвестна: сбрасываем в дефолт, а не
+            // оставляем команду ПРЕДЫДУЩЕГО владельца (иначе выстрел чужого
+            // солдата считался бы «своим» по остаткам).
+            _ownerTeam = ownerHealth != null ? ownerHealth.Team : Team.Axis;
             _ownerCache = owner;
         }
 

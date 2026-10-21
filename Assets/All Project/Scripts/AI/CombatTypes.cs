@@ -35,7 +35,10 @@ public readonly struct DamageInfo
     {
         Amount = amount;
         Point = point;
-        Direction = direction;
+        // Направление всегда единичное: по нему считают «откуда прилетел урон».
+        // Раньше каждый вызывающий был обязан нормализовать сам — иначе «позиция
+        // стрелка» (Point - Direction) считалась неверно.
+        Direction = direction.sqrMagnitude > 1e-6f ? direction.normalized : Vector3.zero;
         Attacker = attacker;
         IsSuppression = isSuppression;
     }

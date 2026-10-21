@@ -67,8 +67,10 @@ namespace ZharkoeLeto44.AI
         [SerializeField] private LayerMask dropGroundMask = ~0;
 
         [Tooltip("Объект, который выпадает при смерти (например, DropMp40 с правильным " +
-                 "коллайдером). Если задан — роняется он, а не оружие из рук.")]
+                  "коллайдером). Если задан — роняется он, а не оружие из рук: " +
+                  "меш оружия из рук убирается, спавнится этот объект.")]
         [SerializeField] private GameObject dropObject;
+
         [Tooltip("Случайный разброс точки дропа по Y и Z (X не трогаем) — ложится около врага.")]
         [SerializeField, Min(0f)] private float dropScatter = 0.4f;
         [Tooltip("Поправка разворота дропа (градусы): если модель Drop Object смотрит " +
@@ -103,6 +105,7 @@ namespace ZharkoeLeto44.AI
 
         private EnemyVoice _voice;
         private EnemyMotor _motor;
+        private EnemyAI _ai;
         private GameObject _spawnedWeaponRoot;
         private bool _weaponDropped;
         private Transform _adoptedVisual;
@@ -111,6 +114,7 @@ namespace ZharkoeLeto44.AI
         {
             _voice = GetComponent<EnemyVoice>();
             _motor = GetComponent<EnemyMotor>();
+            _ai = GetComponent<EnemyAI>();
             ResolveSocket();
             EquipInitialWeapon();
         }
@@ -225,6 +229,10 @@ namespace ZharkoeLeto44.AI
 
             var socket = new GameObject(socketName).transform;
             socket.SetParent(parent, false);
+            // Слой — как у родителя: иначе сокет/дуло остаются на Default
+            // (новый GameObject всегда создаётся на слое 0) и попадают
+            // в рейкасты игрока.
+            socket.gameObject.layer = parent.gameObject.layer;
             socket.localPosition = localPosition;
             socket.localRotation = Quaternion.identity;
             return socket;
@@ -356,8 +364,7 @@ namespace ZharkoeLeto44.AI
 
             weapon.ResetAmmo();
             Weapon = weapon;
-            var ai = GetComponent<EnemyAI>();
-            if (ai != null) ai.SetWeapon(weapon);
+            if (_ai != null) _ai.SetWeapon(weapon);
 
             if (playSound && equipSound != null)
             {
@@ -547,6 +554,11 @@ namespace ZharkoeLeto44.AI
             weapon.CancelReload();
             weapon.enabled = false;
 
+            // ИИ больше не должен видеть это оружие: после дропа объект
+            // уничтожается, а EnemyAI продолжал держать ссылку и читать
+            // weapon.IsReloading → MissingReferenceException.
+            DetachWeaponFromAI();
+
             if (!dropWeaponOnDeath) return;
 
             Transform weaponRoot = weapon.transform;
@@ -617,7 +629,11 @@ namespace ZharkoeLeto44.AI
 
             BoxCollider fitBox = weaponRoot.GetComponent<BoxCollider>()
                 ?? weaponRoot.GetComponentInChildren<BoxCollider>();
-            var dropper = weaponRoot.gameObject.AddComponent<DroppedWeapon>();
+            // GetComponent, а не AddComponent: на префабе оружия уже может быть
+            // DroppedWeapon, а он [DisallowMultipleComponent] — AddComponent
+            // бросил бы ошибку и оружие осталось бы без дропа.
+            var dropper = weaponRoot.GetComponent<DroppedWeapon>();
+            if (dropper == null) dropper = weaponRoot.gameObject.AddComponent<DroppedWeapon>();
             dropper.Initialize(
                 gravityDelay: dropGravityDelay,
                 launchVelocity: DropLaunchVelocity(weaponRoot.position),
@@ -636,6 +652,13 @@ namespace ZharkoeLeto44.AI
             foreach (Renderer r in root.GetComponentsInChildren<Renderer>(true))
                 if (r != null) return true;
             return false;
+        }
+
+        /// <summary>Отписать ИИ от оружия (оно уничтожено/выброшено).</summary>
+        private void DetachWeaponFromAI()
+        {
+            if (_ai == null) return;
+            _ai.SetWeapon(null);
         }
 
         private void ComputeDropPose(Transform weaponRoot, out Vector3 position, out Quaternion rotation)
@@ -699,6 +722,7 @@ namespace ZharkoeLeto44.AI
 
             Transform weaponRoot = weapon.transform;
             weapon.enabled = false;
+            DetachWeaponFromAI();
 
             if (dropObject != null)
             {
@@ -720,19 +744,15 @@ namespace ZharkoeLeto44.AI
             foreach (Transform child in weaponRoot.GetComponentsInChildren<Transform>(true))
                 child.gameObject.layer = 0;
 
-            var body = weaponRoot.GetComponent<Rigidbody>();
-            if (body == null) body = weaponRoot.gameObject.AddComponent<Rigidbody>();
-
-            body.isKinematic = false;
-            body.useGravity = true;
-            body.mass = dropMass;
-            body.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
-
-            body.AddForce(DropLaunchVelocity(weaponRoot.position) * body.mass, ForceMode.Impulse);
-            var dropper = weaponRoot.gameObject.AddComponent<DroppedWeapon>();
+            // Порядок ВАЖЕН: сначала создаём DroppedWeapon (его Awake ставит тело
+            // кинематическим), иначе импульс броска терялся: AddForce применялся
+            // к телу, которое следующим же кадром становилось kinematic = true.
+            // Теперь скорость броска передаётся в Initialize — как в HandleOwnerDeath.
+            var dropper = weaponRoot.GetComponent<DroppedWeapon>();
+            if (dropper == null) dropper = weaponRoot.gameObject.AddComponent<DroppedWeapon>();
             dropper.Initialize(
                 gravityDelay: 0f,
-                launchVelocity: Vector3.zero,
+                launchVelocity: DropLaunchVelocity(weaponRoot.position),
                 spin: Vector3.zero,
                 groundMask: dropGroundMask,
                 lifetime: dropLifetime);
@@ -744,14 +764,20 @@ namespace ZharkoeLeto44.AI
         private void SpawnDropObject(Transform weaponRoot)
         {
             ComputeDropPose(weaponRoot, out Vector3 spawnPosition, out Quaternion spawnRotation);
+
+            // Визуал из рук убираем: падать должен Drop Object (так обещает тултип
+            // поля). Раньше здесь стоял early return вместе с SpawnVisualDrop() —
+            // и назначенный в инспекторе Drop Object молча НЕ создавался, если у
+            // модели был свой меш оружия (типичный случай: MP40 в руке).
+            // Если визуал уже уничтожен DestroyLegacyLeftovers — он == null, и
+            // эта ветка не выполняется (поведение не меняется).
             if (_adoptedVisual != null)
             {
-                SpawnVisualDrop();
+                if (!_adoptedVisual.IsChildOf(weaponRoot))
+                    Destroy(_adoptedVisual.gameObject);
                 _adoptedVisual = null;
-                if (weaponRoot != null && weaponRoot != transform)
-                    Destroy(weaponRoot.gameObject);
-                return;
             }
+
             if (weaponRoot != null && weaponRoot != transform)
                 Destroy(weaponRoot.gameObject);
 
