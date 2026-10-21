@@ -7,7 +7,9 @@ namespace ZharkoeLeto44.AI
     {
         [Header("Что дать в руки")]
         [Tooltip("Префаб оружия. На нём (или его детях) желательно иметь HitscanWeapon — " +
-                 "если его нет, компонент добавит его сам.")]
+                 "если его нет, компонент добавит его сам. " +
+                 "ВАЖНО: если в модели уже есть оружие (Mp40 в руке) — префаб ИГНОРИРУЕТСЯ, " +
+                 "лишнее оружие не создаётся. Немец со «своей» моделью стреляет из неё.")]
         [SerializeField] private GameObject weaponPrefab;
         [Tooltip("Уже поставленное вручную оружие. Если задано — префаб игнорируется.")]
         [SerializeField] private HitscanWeapon existingWeapon;
@@ -236,6 +238,8 @@ namespace ZharkoeLeto44.AI
                 return;
             }
 
+            // Оружие УЖЕ есть на модели (например, Mp40 в руке) — второй экземпляр
+            // не создаём: иначе у немца в руках появляется лишнее оружие.
             var alreadyPresent = GetComponentInChildren<HitscanWeapon>(true);
             if (alreadyPresent != null)
             {
@@ -243,8 +247,56 @@ namespace ZharkoeLeto44.AI
                 return;
             }
 
-            if (weaponPrefab != null)
-                EquipWeapon(weaponPrefab, playSound: false);
+            if (weaponPrefab == null) return;
+
+            // Модель уже держит оружие мешем (Mp40 в руке), но без компонента
+            // HitscanWeapon. Добавляем компонент в держатель — модель оружия
+            // НЕ создаём, она уже настроена в модели.
+            Transform holder = FindWeaponHolder();
+            if (holder != null)
+            {
+                HitscanWeapon created = holder.gameObject.AddComponent<HitscanWeapon>();
+                AdoptWeapon(created, reparent: false, playSound: false);
+                return;
+            }
+
+            if (weaponPrefab.transform.IsChildOf(transform))
+            {
+                HitscanWeapon existing = weaponPrefab.GetComponent<HitscanWeapon>() ??
+                    weaponPrefab.GetComponentInChildren<HitscanWeapon>(true);
+                if (existing == null)
+                {
+                    existing = weaponPrefab.AddComponent<HitscanWeapon>();
+                    Debug.Log($"[EnemyLoadout] {name}: HitscanWeapon добавлен на уже " +
+                              "существующую модель оружия — второй экземпляр не создаётся.", this);
+                }
+
+                AdoptWeapon(existing, reparent: true, playSound: false);
+                return;
+            }
+
+            EquipWeapon(weaponPrefab, playSound: false);
+        }
+
+        /// <summary>
+        /// Держатель оружия в модели: объект «Weapon»/«Gun»/«Оружие», который
+        /// уже стоит на модели (в нём или в его детях — Mp40 и т.п.).
+        /// Ищем ТОЛЬКО среди прямых детей корня: кости скелета не трогаем.
+        /// </summary>
+        private Transform FindWeaponHolder()
+        {
+            foreach (Transform child in transform)
+            {
+                if (child == null) continue;
+                string n = child.name.ToLowerInvariant();
+                if (n.Contains("weapon") || n.Contains("gun") || n.Contains("оруж"))
+                {
+                    if (child.GetComponent<HitscanWeapon>() == null) return child;
+                }
+            }
+
+            // Держателя нет — сам меш оружия становится носителем компонента.
+            return FindModelWeaponMesh();
         }
 
         public HitscanWeapon EquipWeapon(GameObject prefab, bool playSound = true)
@@ -326,11 +378,60 @@ namespace ZharkoeLeto44.AI
             Weapon = null;
         }
 
+        /// <summary>
+        /// Модель уже несёт оружие в руках (Mp40 и т.п.) — найти его.
+        /// Возвращает null, если такого меша в модели нет.
+        /// </summary>
+        private Transform FindModelWeaponMesh()
+        {
+            foreach (Transform child in transform)
+            {
+                if (child == null) continue;
+
+                if (IsLegacyWeaponName(child.name) &&
+                    child.GetComponentInChildren<Renderer>(true) != null)
+                    return child;
+
+                Transform deep = FindWeaponMeshDeep(child);
+                if (deep != null) return deep;
+            }
+
+            return null;
+        }
+
+        private Transform FindWeaponMeshDeep(Transform parent)
+        {
+            foreach (Transform child in parent)
+            {
+                if (child == null) continue;
+                if (IsLegacyWeaponName(child.name) &&
+                    child.GetComponentInChildren<Renderer>(true) != null)
+                    return child;
+
+                Transform deep = FindWeaponMeshDeep(child);
+                if (deep != null) return deep;
+            }
+
+            return null;
+        }
+
         private void TryAdoptVisual(HitscanWeapon weapon)
         {
             if (weapon == null) return;
             foreach (Renderer r in weapon.GetComponentsInChildren<Renderer>(true))
                 if (r != null) return;
+
+            // Модель УЖЕ держит оружие (меш Mp40 в руке). Оставляем его на месте
+            // и НЕ переносим к стволу: визуал оторвался бы от руки и «появлялся»
+            // рядом с немцем. Запоминаем меш, чтобы после смерти выронить его
+            // из руки (см. HandleOwnerDeath).
+            Transform modelWeapon = FindModelWeaponMesh();
+            if (modelWeapon != null)
+            {
+                _adoptedVisual = modelWeapon;
+                return;
+            }
+
             Transform weaponRoot = weapon.transform;
             foreach (Transform child in transform)
             {
@@ -463,6 +564,20 @@ namespace ZharkoeLeto44.AI
                 // weaponRoot исключаем: его поза нужна для спавна, его снесёт SpawnDropObject.
                 DestroyLegacyLeftovers(weaponRoot);
                 SpawnDropObject(weaponRoot);
+                _spawnedWeaponRoot = null;
+                Weapon = null;
+                _weaponDropped = true;
+                return;
+            }
+
+            // Оружие осталось в руках модели (Mp40) и не переносилось к стволу.
+            // Роняем визуал отдельно: копия падает на землю, оригинал уходит
+            // из рук трупа. Невидимый держатель оружия тогда не нужен.
+            if (_adoptedVisual != null && !_adoptedVisual.IsChildOf(weaponRoot))
+            {
+                SpawnVisualDrop();
+                _adoptedVisual = null;
+                if (weaponRoot != transform) Destroy(weaponRoot.gameObject);
                 _spawnedWeaponRoot = null;
                 Weapon = null;
                 _weaponDropped = true;
@@ -674,11 +789,23 @@ namespace ZharkoeLeto44.AI
         private void SpawnVisualDrop()
         {
             Transform visual = _adoptedVisual;
-            GameObject instance = Instantiate(visual.gameObject,
-                ScatterDrop(visual.position), visual.rotation);
+            if (visual == null) return;
+
+            // Оружие лежит в руках (дочернее от кости) — у кости свой мелкий
+            // масштаб. Копию ставим в мир с МИРОВЫМ масштабом, иначе ствол
+            // вырастет в сто раз.
+            Vector3 worldScale = visual.lossyScale;
+            Quaternion worldRotation = visual.rotation;
+            Vector3 worldPosition = ScatterDrop(visual.position);
+
+            GameObject instance = Instantiate(visual.gameObject);
             instance.name = visual.name;
-            instance.transform.SetParent(null);
+            instance.transform.SetParent(null, true);
+            instance.transform.position = worldPosition;
+            instance.transform.rotation = worldRotation;
+            instance.transform.localScale = worldScale;
             instance.SetActive(true);
+
             foreach (HitscanWeapon gun in instance.GetComponentsInChildren<HitscanWeapon>(true))
             {
                 gun.enabled = false;
@@ -719,6 +846,11 @@ namespace ZharkoeLeto44.AI
                 spin: DropRollSpin(box, instance.transform.rotation),
                 groundMask: dropGroundMask,
                 lifetime: dropLifetime);
+
+            // Оригинал убираем: копия уже лежит на земле, в руках трупа
+            // оружия быть не должно.
+            if (visual != null && visual.gameObject != instance)
+                Destroy(visual.gameObject);
         }
 
         private void ApplyDropCollider(GameObject instance)

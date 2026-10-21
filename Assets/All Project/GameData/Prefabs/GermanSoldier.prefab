@@ -1638,8 +1638,8 @@ MonoBehaviour:
   runClip: {fileID: 7400000, guid: e00a96682e88d6c478b83717c08bf4f7, type: 2}
   sprintClip: {fileID: 7400000, guid: e00a96682e88d6c478b83717c08bf4f7, type: 2}
   walkAnchorSpeed: 1.8
-  runAnchorSpeed: 10
-  sprintAnchorSpeed: 11
+  runAnchorSpeed: 2.8
+  sprintAnchorSpeed: 3.2
   idleMaxSpeed: 0.25
   blendResponsiveness: 8
   freezeInPlaceWithoutIdle: 1
@@ -1921,7 +1921,7 @@ MonoBehaviour:
   wanderWhenNoRoute: 1
   wanderRadius: 10
   wanderRetryDelay: 1.5
-  chaseSpeed: 10
+  chaseSpeed: 2.8
   preferredCombatDistance: 20
   maximumCombatDistance: 38
   combatDecisionInterval: 0.6

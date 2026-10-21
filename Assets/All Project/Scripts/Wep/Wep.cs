@@ -36,6 +36,8 @@ public class Wep : MonoBehaviour
 
     [Tooltip("Радиус, в котором враги слышат выстрел. 0 — выстрел бесшумный для ИИ.")]
     [Min(0f)] public float shotNoiseRadius = 40f;
+    [Tooltip("Множитель радиуса слышимости выстрела.")]
+    [Min(1f)] public float shotNoiseMultiplier = 4f;
 
     [Tooltip("Писать в консоль, во что попала пуля и сколько урона нанесла.")]
     public bool logHits = false;
@@ -891,7 +893,8 @@ public class Wep : MonoBehaviour
             rayOrigin, endPoint, shooter, team, hitSomething));
 
         if (shotNoiseRadius > 0f)
-            ZharkoeLeto44.AI.NoiseSystem.Emit(muzzlePoint.position, shotNoiseRadius, shooter, 1f);
+            ZharkoeLeto44.AI.NoiseSystem.Emit(muzzlePoint.position,
+                shotNoiseRadius * shotNoiseMultiplier, shooter, 1f);
 
         if (currentFireMode == FireMode.Auto)
             currentSpread = Mathf.Min(currentSpread + autoSpreadPerShot * (1 - currentSpread / maxSpread), maxSpread);

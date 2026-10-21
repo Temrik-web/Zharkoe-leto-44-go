@@ -49,6 +49,8 @@ public sealed class HitscanWeapon : MonoBehaviour
 
     [Header("Audible noise")]
     [SerializeField, Min(0f)] private float shotNoiseRadius = 35f;
+    [Tooltip("Множитель радиуса слышимости выстрела.")]
+    [SerializeField, Min(1f)] private float shotNoiseMultiplier = 4f;
 
     [Header("Tracer")]
     [SerializeField] private bool showTracer = true;
@@ -159,7 +161,7 @@ public sealed class HitscanWeapon : MonoBehaviour
 
         PlayMuzzleFx();
 
-        NoiseSystem.Emit(MuzzlePosition, shotNoiseRadius, owner, 1f);
+        NoiseSystem.Emit(MuzzlePosition, shotNoiseRadius * shotNoiseMultiplier, owner, 1f);
 
         Vector3 endPoint = origin + direction * range;
         bool hitSomething = false;

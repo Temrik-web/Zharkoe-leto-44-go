@@ -1,9 +1,28 @@
+using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.AI;
 
 public class EnemySpawnCube : MonoBehaviour
 {
-    [Header("Немцы (выключенные объекты на сцене)")]
-    [Tooltip("Перетащи сюда 3 шаблона: == Enemy Template (клонируй меня) ==, (1), (2). Пусто — найдутся сами по имени.")]
+    [Header("Спавн модели немца")]
+    [Tooltip("Префаб немецкого солдата. Пусто — возьмём GermanSoldier.prefab из проекта. " +
+             "Спавнится ИМЯ модель: она уже настроена (оружие в руках, анимации, ИИ) — " +
+             "скрипт ничего не добавляет.")]
+    public GameObject germanPrefab;
+
+    [Tooltip("Сколько немцев выпустить.")]
+    public int spawnCount = 3;
+
+    [Tooltip("Радиус расстановки вокруг куба, м. Немцы встают по разным точкам, " +
+             "а не в одной куче (иначе они потом и в бою слипаются в одну точку).")]
+    public float spawnRadius = 7f;
+
+    [Tooltip("Минимальная дистанция между спавн-точками, м.")]
+    public float spawnSpacing = 4f;
+
+    [Header("Немцы, уже стоящие на сцене (старый способ)")]
+    [Tooltip("Выключенные объекты на сцене: если German Prefab не задан, " +
+             "включаются эти. Пусто — найдутся сами по имени.")]
     public GameObject[] enemiesToEnable = new GameObject[3];
 
     [Header("Взаимодействие")]
@@ -21,14 +40,29 @@ public class EnemySpawnCube : MonoBehaviour
     private float doneUntil;
     private float nextPlayerWarnTime;
     private GUIStyle _hintStyle;
+    private readonly List<GameObject> _spawned = new();
+
+    private const string GermanPrefabPath =
+        "Assets/All Project/GameData/Prefabs/GermanSoldier.prefab";
 
     private void Start()
     {
+        if (germanPrefab == null) germanPrefab = LoadGermanPrefab();
+
         if (!HasAssignedEnemies()) AutoFindEnemies();
 
-        if (!HasAssignedEnemies())
-            Debug.LogWarning($"[EnemySpawnCube] {name}: немцы не назначены и не найдены по имени " +
-                             "\"Enemy Template\". Перетащи 3 шаблона в массив enemiesToEnable.", this);
+        if (germanPrefab == null && !HasAssignedEnemies())
+            Debug.LogWarning($"[EnemySpawnCube] {name}: не найден префаб немца " +
+                             $"({GermanPrefabPath}) и не заданы объекты на сцене.", this);
+    }
+
+    private static GameObject LoadGermanPrefab()
+    {
+#if UNITY_EDITOR
+        GameObject prefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(GermanPrefabPath);
+        if (prefab != null) return prefab;
+#endif
+        return Resources.Load<GameObject>("GermanSoldier");
     }
 
     private void Update()
@@ -56,16 +90,96 @@ public class EnemySpawnCube : MonoBehaviour
         if (spawnOnce && hasSpawned) return;
         if (Input.GetKeyDown(interactKey)) EnableEnemies();
     }
+
     public void EnableEnemies()
+    {
+        if (germanPrefab != null) SpawnGermans();
+        else EnableSceneEnemies();
+
+        hasSpawned = true;
+        doneUntil = Time.time + doneMessageTime;
+    }
+
+    /// <summary>
+    /// Спавн моделей немца по разным точкам вокруг куба: только модель,
+    /// уже настроенная в префабе. Никаких дополнительных объектов.
+    /// </summary>
+    private void SpawnGermans()
+    {
+        int count = Mathf.Max(1, spawnCount);
+        float radius = Mathf.Max(0.5f, spawnRadius);
+
+        for (int i = 0; i < count; i++)
+        {
+            Vector3 point = FindSpawnPoint(i, count, radius);
+            Quaternion rot = Quaternion.LookRotation(FlatDirectionTo(point), Vector3.up);
+
+            GameObject instance = Instantiate(germanPrefab, point, rot);
+            instance.name = germanPrefab.name;
+            _spawned.Add(instance);
+        }
+
+        Debug.Log($"[EnemySpawnCube] {name}: выпущено немцев: {_spawned.Count} " +
+                  $"(модель «{germanPrefab.name}», точки разнесены по радиусу {radius:F1} м).", this);
+    }
+
+    /// <summary>
+    /// Точка спавна: равномерно по кольцу + разброс, и рядом не было спавнов.
+    /// Так немцы сразу стоят по местности, а не в одной точке.
+    /// </summary>
+    private Vector3 FindSpawnPoint(int index, int count, float radius)
+    {
+        float baseAngle = index / (float)Mathf.Max(1, count) * 360f + Random.Range(-18f, 18f);
+        float ringRadius = radius * Random.Range(0.55f, 1f);
+
+        for (int attempt = 0; attempt < 8; attempt++)
+        {
+            float angle = baseAngle + attempt * 37f;
+            float r = ringRadius * (1f - attempt * 0.08f);
+            Vector3 candidate = transform.position +
+                new Vector3(Mathf.Sin(angle * Mathf.Deg2Rad) * r, 0f, Mathf.Cos(angle * Mathf.Deg2Rad) * r);
+
+            Vector3 result = candidate;
+            if (NavMesh.SamplePosition(candidate, out NavMeshHit hit, 4f, NavMesh.AllAreas))
+                result = hit.position;
+
+            bool crowded = false;
+            foreach (GameObject go in _spawned)
+            {
+                if (go == null) continue;
+                Vector3 a = go.transform.position;
+                Vector3 b = result;
+                a.y = 0f;
+                b.y = 0f;
+                if (Vector3.Distance(a, b) < spawnSpacing) { crowded = true; break; }
+            }
+
+            if (!crowded) return result;
+        }
+
+        Vector3 fallback = transform.position;
+        if (NavMesh.SamplePosition(transform.position, out NavMeshHit fallbackHit, 4f, NavMesh.AllAreas))
+            fallback = fallbackHit.position;
+        return fallback;
+    }
+
+    private Vector3 FlatDirectionTo(Vector3 point)
+    {
+        Vector3 dir = point - transform.position;
+        dir.y = 0f;
+        if (dir.sqrMagnitude < 0.0001f) dir = transform.forward;
+        dir.y = 0f;
+        if (dir.sqrMagnitude < 0.0001f) dir = Vector3.forward;
+        return dir.normalized;
+    }
+
+    private void EnableSceneEnemies()
     {
         foreach (GameObject go in enemiesToEnable)
         {
             if (go == null || go.activeSelf) continue;
             go.SetActive(true);
         }
-
-        hasSpawned = true;
-        doneUntil = Time.time + doneMessageTime;
     }
 
     private bool HasAssignedEnemies()
@@ -76,20 +190,10 @@ public class EnemySpawnCube : MonoBehaviour
         return false;
     }
 
-    private int CountAssigned()
-    {
-        if (enemiesToEnable == null) return 0;
-        int n = 0;
-        foreach (GameObject go in enemiesToEnable)
-            if (go != null) n++;
-        return n;
-    }
-
     private void AutoFindEnemies()
     {
         Transform[] all = FindObjectsOfType<Transform>(true);
-        System.Collections.Generic.List<GameObject> found =
-            new System.Collections.Generic.List<GameObject>();
+        List<GameObject> found = new List<GameObject>();
 
         string[] wanted =
         {
@@ -154,6 +258,9 @@ public class EnemySpawnCube : MonoBehaviour
     {
         Gizmos.color = Color.red;
         Gizmos.DrawWireSphere(transform.position, interactDistance);
+
+        Gizmos.color = new Color(1f, 0.8f, 0.2f, 0.5f);
+        Gizmos.DrawWireSphere(transform.position, Mathf.Max(0.5f, spawnRadius));
 
         if (enemiesToEnable == null) return;
         Gizmos.color = Color.yellow;

@@ -17,6 +17,16 @@ namespace ZharkoeLeto44.AI
                  "замедляется к концу поворота, как у человека.")]
         [SerializeField, Min(1f)] private float turnSpeed = 180f;
 
+        [Header("Плавность хода")]
+        [Tooltip("Разгон текущей скорости, м/с². Убирает рывок в начале движения.")]
+        [SerializeField, Min(0.5f)] private float speedAcceleration = 2.5f;
+        [Tooltip("Торможение текущей скорости, м/с². Убирает резкую остановку.")]
+        [SerializeField, Min(0.5f)] private float speedDeceleration = 5f;
+        [Tooltip("Насколько резко скорость режется у самой точки: 0 — полный разгон " +
+                 "до упора, 1 — плавное подтормаживание. По умолчанию солдат мягко " +
+                 "подходит к точке, а не тормозит на месте.")]
+        [SerializeField, Range(0f, 1f)] private float arriveDamping = 0.75f;
+
         [Header("Режим без NavMesh")]
         [Tooltip("Разрешить ходьбу без запечённого NavMesh. Выключи, если ходьба " +
                  "должна быть строго по навмешу.")]
@@ -111,8 +121,9 @@ namespace ZharkoeLeto44.AI
         /// играть locomotion, а не idle.
         /// </summary>
         public bool WantsToMove =>
-            HasDestination && _desiredSpeed > 0.01f && CanMove &&
-            !_blockedCompletely && !HasArrived();
+            CanMove && !_blockedCompletely &&
+            ((HasDestination && _desiredSpeed > 0.01f && !HasArrived()) ||
+             (_stopping && CurrentSpeed > 0.1f));
 
         private NavMeshAgent _agent;
         private CharacterController _controller;
@@ -128,6 +139,8 @@ namespace ZharkoeLeto44.AI
         private Vector3 _previousPosition;
         private Vector3 _measuredVelocity;
         private float _fallbackSpeed;
+        private bool _stopping;
+        private float _stopUntil;
         private Vector3 _fallbackMoveDir;
         private Vector3 _lastProgressPos;
         private float _lastProgressTime;
@@ -182,6 +195,7 @@ namespace ZharkoeLeto44.AI
         {
             _previousPosition = transform.position;
             _measuredVelocity = Vector3.zero;
+            _stopping = false;
             _lastProgressPos = transform.position;
             _lastProgressTime = Time.time;
         }
@@ -189,7 +203,6 @@ namespace ZharkoeLeto44.AI
         public void SetSpeed(float speed)
         {
             _desiredSpeed = Mathf.Max(0f, speed);
-            if (AgentUsable) _agent.speed = _desiredSpeed;
         }
 
         public bool MoveTo(Vector3 target)
@@ -197,6 +210,7 @@ namespace ZharkoeLeto44.AI
             if (snapDestinationToGround) target = SnapDestinationY(target);
             _destination = target;
             HasDestination = true;
+            _stopping = false;
             _blockedCompletely = false;
             _destinationSetTime = Time.time;
 
@@ -209,7 +223,6 @@ namespace ZharkoeLeto44.AI
                 }
 
                 _agent.isStopped = false;
-                _agent.speed = _desiredSpeed;
                 return _agent.SetDestination(target);
             }
 
@@ -219,6 +232,8 @@ namespace ZharkoeLeto44.AI
         public void Stop()
         {
             _blockedCompletely = false;
+            if (_stopping) return;
+
             bool agentBusy = AgentUsable && (_agent.hasPath || _agent.pathPending || !_agent.isStopped);
             if (!HasDestination && !agentBusy) return;
 
@@ -226,8 +241,17 @@ namespace ZharkoeLeto44.AI
 
             if (AgentUsable)
             {
-                _agent.isStopped = true;
-                _agent.ResetPath();
+                if (_agent.speed <= 0.05f)
+                {
+                    _agent.isStopped = true;
+                    _agent.ResetPath();
+                    _agent.speed = 0f;
+                    return;
+                }
+
+                _stopping = true;
+                _stopUntil = Time.time + _agent.speed / speedDeceleration + 0.15f;
+                _agent.isStopped = false;
             }
         }
 
@@ -329,6 +353,7 @@ namespace ZharkoeLeto44.AI
             Stop();
             HasDestination = false;
             _measuredVelocity = Vector3.zero;
+            _stopping = false;
 
             if (_agent != null) _agent.enabled = false;
             enabled = false;
@@ -345,12 +370,54 @@ namespace ZharkoeLeto44.AI
                 EvaluateMode(false);
             }
 
+            if (Mode == MotorMode.NavMesh && AgentUsable)
+            {
+                if (_stopping)
+                {
+                    _agent.speed = Mathf.MoveTowards(_agent.speed, 0f,
+                        speedDeceleration * dt);
+                    if (_agent.speed <= 0.05f || Time.time >= _stopUntil)
+                    {
+                        _agent.isStopped = true;
+                        _agent.ResetPath();
+                        _agent.speed = 0f;
+                        _stopping = false;
+                    }
+                }
+                else if (_agent.isStopped || !HasDestination)
+                {
+                    _agent.speed = 0f;
+                }
+                else
+                {
+                    float rate = _desiredSpeed > _agent.speed
+                        ? speedAcceleration
+                        : speedDeceleration;
+                    _agent.speed = Mathf.MoveTowards(_agent.speed, DampedSpeed(), rate * dt);
+                }
+            }
+
             if (Mode == MotorMode.Fallback && allowFallbackMovement)
                 UpdateFallbackMovement(dt);
 
             Vector3 position = transform.position;
             _measuredVelocity = (position - _previousPosition) / dt;
             _previousPosition = position;
+        }
+
+        /// <summary>
+        /// Скорость с учётом подтормаживания у точки: чем ближе к цели,
+        /// тем тише идём. Без этого враг разгоняется, подлетает к точке и
+        /// тормозит на месте — выглядит рывком.
+        /// </summary>
+        private float DampedSpeed()
+        {
+            if (arriveDamping <= 0f || !HasDestination) return _desiredSpeed;
+
+            float distance = FlatDistance(transform.position, _destination);
+            float slowZone = Mathf.Max(0.5f, arriveRadius * 2.5f);
+            float t = Mathf.Clamp01(distance / slowZone);
+            return _desiredSpeed * Mathf.Lerp(1f - arriveDamping, 1f, t);
         }
 
         // NavMesh-агент сам двигает тело в своём внутреннем обновлении и гравитации
@@ -500,6 +567,7 @@ namespace ZharkoeLeto44.AI
                 if (Mode != MotorMode.NavMesh)
                 {
                     Mode = MotorMode.NavMesh;
+                    _stopping = false;
                     _verticalVelocity = 0f;
                     _isGrounded = true;
 
@@ -514,6 +582,7 @@ namespace ZharkoeLeto44.AI
             if (TryReturnToNavMesh())
             {
                 Mode = MotorMode.NavMesh;
+                _stopping = false;
                 _verticalVelocity = 0f;
                 _isGrounded = true;
                 if (_controller != null && _controller.enabled)
@@ -525,6 +594,7 @@ namespace ZharkoeLeto44.AI
             if (Mode != MotorMode.Fallback)
             {
                 Mode = MotorMode.Fallback;
+                _stopping = false;
                 if (_agent.enabled) _agent.enabled = false;
 
                 if (_controller != null && !_controller.enabled)
@@ -575,7 +645,8 @@ namespace ZharkoeLeto44.AI
                 return false;
             }
 
-            _agent.speed = _desiredSpeed;
+            _agent.speed = 0f;
+            _stopping = false;
             _verticalVelocity = 0f;
             return _agent.isOnNavMesh;
         }
@@ -606,7 +677,7 @@ namespace ZharkoeLeto44.AI
                     if (TryResolveDirection(position, footY, straight, out Vector3 clearDirection))
                     {
                         _blockedCompletely = false;
-                        desiredSpeed = Mathf.Min(_desiredSpeed, distance / Mathf.Max(dt, 0.0001f));
+                        desiredSpeed = Mathf.Min(DampedSpeed(), distance / Mathf.Max(dt, 0.0001f));
                         desiredDirection = clearDirection;
                         hasDirection = true;
 

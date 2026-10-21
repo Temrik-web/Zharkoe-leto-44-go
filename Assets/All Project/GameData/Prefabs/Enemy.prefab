@@ -248,7 +248,7 @@ MonoBehaviour:
   wanderWhenNoRoute: 1
   wanderRadius: 14
   wanderRetryDelay: 1.5
-  chaseSpeed: 4.2
+  chaseSpeed: 2.8
   preferredCombatDistance: 20
   maximumCombatDistance: 38
   combatRepositionDistance: 5
@@ -667,6 +667,10 @@ PrefabInstance:
     - target: {fileID: 919132149155446097, guid: 528546bb0f7e62f479651e33b5869583, type: 3}
       propertyPath: m_Name
       value: Mp40
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 528546bb0f7e62f479651e33b5869583, type: 3}
+      propertyPath: m_IsActive
+      value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []

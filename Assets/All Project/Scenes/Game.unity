@@ -1988,6 +1988,9 @@ MonoBehaviour:
   closeDetectDistance: 7
   perceptionInterval: 0.15
   targetMemoryDuration: 8
+  hearingRadiusMultiplier: 1.5
+  hearingSensitivity: 1.3
+  hearingThreshold: 0.06
   timeToDetect: 0.9
   awarenessDecay: 0.35
   reactionTime: 0.55
@@ -1997,7 +2000,16 @@ MonoBehaviour:
   wanderWhenNoRoute: 1
   wanderRadius: 10
   wanderRetryDelay: 1.5
-  chaseSpeed: 10
+  wanderSectorDegrees: 240
+  lookAroundWhenIdle: 1
+  lookAroundIntervalMin: 2.5
+  lookAroundIntervalMax: 6
+  lookAroundAngle: 34
+  lookAroundTurnSpeed: 55
+  lookAroundHoldMin: 0.6
+  lookAroundHoldMax: 1.2
+  chaseSpeed: 2.8
+  combatApproachSpeed: 1.6
   preferredCombatDistance: 20
   maximumCombatDistance: 38
   useSquadTactics: 1
@@ -2005,15 +2017,15 @@ MonoBehaviour:
   squadMinimumSpacing: 5
   squadComfortSpacing: {x: 6.5, y: 8}
   squadMicroAdjustDistance: 1.5
-  squadBypassDistance: {x: 3, y: 6}
   squadPursuitDistance: 33
-  squadLostSightPursuitDelay: 2
-  squadFireAnchorDuration: 1.75
-  squadPursuitSpeedScale: 0.9
-  squadSideCommitDuration: 5
-  combatDecisionInterval: 0.6
-  minStandFireTime: 2
-  minApproachTime: 1.5
+  squadFireAnchorDuration: 1.2
+  squadPursuitSpeedScale: 0.8
+  squadLateralSpread: 9
+  squadDepthSpread: 3
+  squadSeparationDistance: 4.5
+  squadSeparationStrength: 0.8
+  combatAnchorTolerance: 1.2
+  combatAnchorTrackSpeed: 1.5
   openingDuration: 4
   openingSpread: 0.55
   midFightSpread: 1.25
@@ -2061,7 +2073,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1b2d8cf75ee45a64baa45097d2b3f3b2, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  weaponPrefab: {fileID: 474956807}
+  weaponPrefab: {fileID: 0}
   existingWeapon: {fileID: 0}
   handSocket: {fileID: 0}
   useAnimatorHandBone: 1
@@ -2168,6 +2180,9 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   arriveRadius: 1.2
   turnSpeed: 100
+  speedAcceleration: 3.5
+  speedDeceleration: 6
+  arriveDamping: 0.75
   allowFallbackMovement: 1
   navMeshRecheckInterval: 1
   navMeshSnapRadius: 3
@@ -2289,8 +2304,8 @@ MonoBehaviour:
   runClip: {fileID: 7400000, guid: e00a96682e88d6c478b83717c08bf4f7, type: 2}
   sprintClip: {fileID: 7400000, guid: e00a96682e88d6c478b83717c08bf4f7, type: 2}
   walkAnchorSpeed: 1.8
-  runAnchorSpeed: 3.8
-  sprintAnchorSpeed: 5
+  runAnchorSpeed: 2.8
+  sprintAnchorSpeed: 3.2
   idleMaxSpeed: 0.25
   blendResponsiveness: 8
   freezeInPlaceWithoutIdle: 1
@@ -5414,6 +5429,7 @@ MonoBehaviour:
   reloadDuration: 2.4
   roundsPerMinute: 500
   shotNoiseRadius: 35
+  shotNoiseMultiplier: 4
   showTracer: 1
   tracerColor: {r: 1, g: 0.8, b: 0.25, a: 1}
   tracerWidth: 0.025
@@ -10530,6 +10546,7 @@ MonoBehaviour:
   reloadDuration: 2.4
   roundsPerMinute: 500
   shotNoiseRadius: 35
+  shotNoiseMultiplier: 4
   showTracer: 1
   tracerColor: {r: 1, g: 0.8, b: 0.25, a: 1}
   tracerWidth: 0.025
@@ -13467,7 +13484,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6044074877771188676, guid: e52a9ba211731aa4ba4ba466514bfd45, type: 3}
       propertyPath: m_IsActive
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 6389216682205401982, guid: e52a9ba211731aa4ba4ba466514bfd45, type: 3}
       propertyPath: m_LocalPosition.x
@@ -13508,7 +13525,7 @@ PrefabInstance:
     - target: {fileID: 8492023427229120400, guid: e52a9ba211731aa4ba4ba466514bfd45, type: 3}
       propertyPath: weaponPrefab
       value: 
-      objectReference: {fileID: 474956807}
+      objectReference: {fileID: 0}
     - target: {fileID: 8492023427229120400, guid: e52a9ba211731aa4ba4ba466514bfd45, type: 3}
       propertyPath: dropGravityDelay
       value: 0.2
@@ -13537,11 +13554,6 @@ PrefabInstance:
 --- !u!4 &474956806 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 661187851356589259, guid: e52a9ba211731aa4ba4ba466514bfd45, type: 3}
-  m_PrefabInstance: {fileID: 474956805}
-  m_PrefabAsset: {fileID: 0}
---- !u!1 &474956807 stripped
-GameObject:
-  m_CorrespondingSourceObject: {fileID: 6044074877771188676, guid: e52a9ba211731aa4ba4ba466514bfd45, type: 3}
   m_PrefabInstance: {fileID: 474956805}
   m_PrefabAsset: {fileID: 0}
 --- !u!1001 &475513635
@@ -23714,6 +23726,9 @@ MonoBehaviour:
   closeDetectDistance: 7
   perceptionInterval: 0.15
   targetMemoryDuration: 8
+  hearingRadiusMultiplier: 1.5
+  hearingSensitivity: 1.3
+  hearingThreshold: 0.06
   timeToDetect: 0.9
   awarenessDecay: 0.35
   reactionTime: 0.55
@@ -23723,7 +23738,16 @@ MonoBehaviour:
   wanderWhenNoRoute: 1
   wanderRadius: 10
   wanderRetryDelay: 1.5
-  chaseSpeed: 10
+  wanderSectorDegrees: 240
+  lookAroundWhenIdle: 1
+  lookAroundIntervalMin: 2.5
+  lookAroundIntervalMax: 6
+  lookAroundAngle: 34
+  lookAroundTurnSpeed: 55
+  lookAroundHoldMin: 0.6
+  lookAroundHoldMax: 1.2
+  chaseSpeed: 2.8
+  combatApproachSpeed: 1.6
   preferredCombatDistance: 20
   maximumCombatDistance: 38
   useSquadTactics: 1
@@ -23731,15 +23755,15 @@ MonoBehaviour:
   squadMinimumSpacing: 5
   squadComfortSpacing: {x: 6.5, y: 8}
   squadMicroAdjustDistance: 1.5
-  squadBypassDistance: {x: 3, y: 6}
   squadPursuitDistance: 33
-  squadLostSightPursuitDelay: 2
-  squadFireAnchorDuration: 1.75
-  squadPursuitSpeedScale: 0.9
-  squadSideCommitDuration: 5
-  combatDecisionInterval: 0.6
-  minStandFireTime: 2
-  minApproachTime: 1.5
+  squadFireAnchorDuration: 1.2
+  squadPursuitSpeedScale: 0.8
+  squadLateralSpread: 9
+  squadDepthSpread: 3
+  squadSeparationDistance: 4.5
+  squadSeparationStrength: 0.8
+  combatAnchorTolerance: 1.2
+  combatAnchorTrackSpeed: 1.5
   openingDuration: 4
   openingSpread: 0.55
   midFightSpread: 1.25
@@ -23829,7 +23853,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1b2d8cf75ee45a64baa45097d2b3f3b2, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  weaponPrefab: {fileID: 474956807}
+  weaponPrefab: {fileID: 0}
   existingWeapon: {fileID: 0}
   handSocket: {fileID: 0}
   useAnimatorHandBone: 1
@@ -23937,6 +23961,9 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   arriveRadius: 1.2
   turnSpeed: 100
+  speedAcceleration: 3.5
+  speedDeceleration: 6
+  arriveDamping: 0.75
   allowFallbackMovement: 1
   navMeshRecheckInterval: 1
   navMeshSnapRadius: 3
@@ -24058,8 +24085,8 @@ MonoBehaviour:
   runClip: {fileID: 7400000, guid: e00a96682e88d6c478b83717c08bf4f7, type: 2}
   sprintClip: {fileID: 7400000, guid: e00a96682e88d6c478b83717c08bf4f7, type: 2}
   walkAnchorSpeed: 1.8
-  runAnchorSpeed: 10
-  sprintAnchorSpeed: 11
+  runAnchorSpeed: 2.8
+  sprintAnchorSpeed: 3.2
   idleMaxSpeed: 0.25
   blendResponsiveness: 8
   freezeInPlaceWithoutIdle: 1
@@ -24523,6 +24550,7 @@ MonoBehaviour:
   reloadDuration: 2.4
   roundsPerMinute: 500
   shotNoiseRadius: 35
+  shotNoiseMultiplier: 4
   showTracer: 1
   tracerColor: {r: 1, g: 0.8, b: 0.25, a: 1}
   tracerWidth: 0.025
@@ -26584,6 +26612,7 @@ MonoBehaviour:
   reloadDuration: 2.4
   roundsPerMinute: 500
   shotNoiseRadius: 35
+  shotNoiseMultiplier: 4
   showTracer: 1
   tracerColor: {r: 1, g: 0.8, b: 0.25, a: 1}
   tracerWidth: 0.025
@@ -37653,6 +37682,9 @@ MonoBehaviour:
   closeDetectDistance: 7
   perceptionInterval: 0.15
   targetMemoryDuration: 8
+  hearingRadiusMultiplier: 1.5
+  hearingSensitivity: 1.3
+  hearingThreshold: 0.06
   timeToDetect: 0.9
   awarenessDecay: 0.35
   reactionTime: 0.55
@@ -37662,7 +37694,16 @@ MonoBehaviour:
   wanderWhenNoRoute: 1
   wanderRadius: 10
   wanderRetryDelay: 1.5
-  chaseSpeed: 10
+  wanderSectorDegrees: 240
+  lookAroundWhenIdle: 1
+  lookAroundIntervalMin: 2.5
+  lookAroundIntervalMax: 6
+  lookAroundAngle: 34
+  lookAroundTurnSpeed: 55
+  lookAroundHoldMin: 0.6
+  lookAroundHoldMax: 1.2
+  chaseSpeed: 2.8
+  combatApproachSpeed: 1.6
   preferredCombatDistance: 20
   maximumCombatDistance: 38
   useSquadTactics: 1
@@ -37670,15 +37711,15 @@ MonoBehaviour:
   squadMinimumSpacing: 5
   squadComfortSpacing: {x: 6.5, y: 8}
   squadMicroAdjustDistance: 1.5
-  squadBypassDistance: {x: 3, y: 6}
   squadPursuitDistance: 33
-  squadLostSightPursuitDelay: 2
-  squadFireAnchorDuration: 1.75
-  squadPursuitSpeedScale: 0.9
-  squadSideCommitDuration: 5
-  combatDecisionInterval: 0.6
-  minStandFireTime: 2
-  minApproachTime: 1.5
+  squadFireAnchorDuration: 1.2
+  squadPursuitSpeedScale: 0.8
+  squadLateralSpread: 9
+  squadDepthSpread: 3
+  squadSeparationDistance: 4.5
+  squadSeparationStrength: 0.8
+  combatAnchorTolerance: 1.2
+  combatAnchorTrackSpeed: 1.5
   openingDuration: 4
   openingSpread: 0.55
   midFightSpread: 1.25
@@ -37726,7 +37767,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1b2d8cf75ee45a64baa45097d2b3f3b2, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  weaponPrefab: {fileID: 474956807}
+  weaponPrefab: {fileID: 0}
   existingWeapon: {fileID: 0}
   handSocket: {fileID: 0}
   useAnimatorHandBone: 1
@@ -37833,6 +37874,9 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   arriveRadius: 1.2
   turnSpeed: 100
+  speedAcceleration: 3.5
+  speedDeceleration: 6
+  arriveDamping: 0.75
   allowFallbackMovement: 1
   navMeshRecheckInterval: 1
   navMeshSnapRadius: 3
@@ -37954,8 +37998,8 @@ MonoBehaviour:
   runClip: {fileID: 7400000, guid: e00a96682e88d6c478b83717c08bf4f7, type: 2}
   sprintClip: {fileID: 7400000, guid: e00a96682e88d6c478b83717c08bf4f7, type: 2}
   walkAnchorSpeed: 1.8
-  runAnchorSpeed: 3.8
-  sprintAnchorSpeed: 5
+  runAnchorSpeed: 2.8
+  sprintAnchorSpeed: 3.2
   idleMaxSpeed: 0.25
   blendResponsiveness: 8
   freezeInPlaceWithoutIdle: 1
@@ -41248,6 +41292,7 @@ MonoBehaviour:
   reloadDuration: 2.4
   roundsPerMinute: 500
   shotNoiseRadius: 35
+  shotNoiseMultiplier: 4
   showTracer: 1
   tracerColor: {r: 1, g: 0.8, b: 0.25, a: 1}
   tracerWidth: 0.025
@@ -51541,6 +51586,9 @@ MonoBehaviour:
   closeDetectDistance: 7
   perceptionInterval: 0.15
   targetMemoryDuration: 8
+  hearingRadiusMultiplier: 1.5
+  hearingSensitivity: 1.3
+  hearingThreshold: 0.06
   timeToDetect: 0.9
   awarenessDecay: 0.35
   reactionTime: 0.55
@@ -51550,7 +51598,16 @@ MonoBehaviour:
   wanderWhenNoRoute: 1
   wanderRadius: 10
   wanderRetryDelay: 1.5
-  chaseSpeed: 10
+  wanderSectorDegrees: 240
+  lookAroundWhenIdle: 1
+  lookAroundIntervalMin: 2.5
+  lookAroundIntervalMax: 6
+  lookAroundAngle: 34
+  lookAroundTurnSpeed: 55
+  lookAroundHoldMin: 0.6
+  lookAroundHoldMax: 1.2
+  chaseSpeed: 2.8
+  combatApproachSpeed: 1.6
   preferredCombatDistance: 20
   maximumCombatDistance: 38
   useSquadTactics: 1
@@ -51558,15 +51615,15 @@ MonoBehaviour:
   squadMinimumSpacing: 5
   squadComfortSpacing: {x: 6.5, y: 8}
   squadMicroAdjustDistance: 1.5
-  squadBypassDistance: {x: 3, y: 6}
   squadPursuitDistance: 33
-  squadLostSightPursuitDelay: 2
-  squadFireAnchorDuration: 1.75
-  squadPursuitSpeedScale: 0.9
-  squadSideCommitDuration: 5
-  combatDecisionInterval: 0.6
-  minStandFireTime: 2
-  minApproachTime: 1.5
+  squadFireAnchorDuration: 1.2
+  squadPursuitSpeedScale: 0.8
+  squadLateralSpread: 9
+  squadDepthSpread: 3
+  squadSeparationDistance: 4.5
+  squadSeparationStrength: 0.8
+  combatAnchorTolerance: 1.2
+  combatAnchorTrackSpeed: 1.5
   openingDuration: 4
   openingSpread: 0.55
   midFightSpread: 1.25
@@ -51614,7 +51671,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1b2d8cf75ee45a64baa45097d2b3f3b2, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  weaponPrefab: {fileID: 474956807}
+  weaponPrefab: {fileID: 0}
   existingWeapon: {fileID: 0}
   handSocket: {fileID: 0}
   useAnimatorHandBone: 1
@@ -51722,6 +51779,9 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   arriveRadius: 1.2
   turnSpeed: 100
+  speedAcceleration: 3.5
+  speedDeceleration: 6
+  arriveDamping: 0.75
   allowFallbackMovement: 1
   navMeshRecheckInterval: 1
   navMeshSnapRadius: 3
@@ -51843,8 +51903,8 @@ MonoBehaviour:
   runClip: {fileID: 7400000, guid: e00a96682e88d6c478b83717c08bf4f7, type: 2}
   sprintClip: {fileID: 7400000, guid: e00a96682e88d6c478b83717c08bf4f7, type: 2}
   walkAnchorSpeed: 1.8
-  runAnchorSpeed: 3.8
-  sprintAnchorSpeed: 5
+  runAnchorSpeed: 2.8
+  sprintAnchorSpeed: 3.2
   idleMaxSpeed: 0.25
   blendResponsiveness: 8
   freezeInPlaceWithoutIdle: 1
@@ -55044,6 +55104,7 @@ MonoBehaviour:
   headZoneHeight: 0.3
   shooterTeam: 0
   shotNoiseRadius: 40
+  shotNoiseMultiplier: 4
   logHits: 1
   baseSpread: 4
   autoSpreadPerShot: 1.5
@@ -63889,6 +63950,9 @@ MonoBehaviour:
   closeDetectDistance: 7
   perceptionInterval: 0.15
   targetMemoryDuration: 8
+  hearingRadiusMultiplier: 1.5
+  hearingSensitivity: 1.3
+  hearingThreshold: 0.06
   timeToDetect: 0.9
   awarenessDecay: 0.35
   reactionTime: 0.55
@@ -63898,7 +63962,16 @@ MonoBehaviour:
   wanderWhenNoRoute: 1
   wanderRadius: 10
   wanderRetryDelay: 1.5
-  chaseSpeed: 10
+  wanderSectorDegrees: 240
+  lookAroundWhenIdle: 1
+  lookAroundIntervalMin: 2.5
+  lookAroundIntervalMax: 6
+  lookAroundAngle: 34
+  lookAroundTurnSpeed: 55
+  lookAroundHoldMin: 0.6
+  lookAroundHoldMax: 1.2
+  chaseSpeed: 2.8
+  combatApproachSpeed: 1.6
   preferredCombatDistance: 20
   maximumCombatDistance: 38
   useSquadTactics: 1
@@ -63906,15 +63979,15 @@ MonoBehaviour:
   squadMinimumSpacing: 5
   squadComfortSpacing: {x: 6.5, y: 8}
   squadMicroAdjustDistance: 1.5
-  squadBypassDistance: {x: 3, y: 6}
   squadPursuitDistance: 33
-  squadLostSightPursuitDelay: 2
-  squadFireAnchorDuration: 1.75
-  squadPursuitSpeedScale: 0.9
-  squadSideCommitDuration: 5
-  combatDecisionInterval: 0.6
-  minStandFireTime: 2
-  minApproachTime: 1.5
+  squadFireAnchorDuration: 1.2
+  squadPursuitSpeedScale: 0.8
+  squadLateralSpread: 9
+  squadDepthSpread: 3
+  squadSeparationDistance: 4.5
+  squadSeparationStrength: 0.8
+  combatAnchorTolerance: 1.2
+  combatAnchorTrackSpeed: 1.5
   openingDuration: 4
   openingSpread: 0.55
   midFightSpread: 1.25
@@ -63983,7 +64056,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1b2d8cf75ee45a64baa45097d2b3f3b2, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  weaponPrefab: {fileID: 474956807}
+  weaponPrefab: {fileID: 0}
   existingWeapon: {fileID: 0}
   handSocket: {fileID: 0}
   useAnimatorHandBone: 1
@@ -64090,6 +64163,9 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   arriveRadius: 1.2
   turnSpeed: 100
+  speedAcceleration: 3.5
+  speedDeceleration: 6
+  arriveDamping: 0.75
   allowFallbackMovement: 1
   navMeshRecheckInterval: 1
   navMeshSnapRadius: 3
@@ -64211,8 +64287,8 @@ MonoBehaviour:
   runClip: {fileID: 7400000, guid: e00a96682e88d6c478b83717c08bf4f7, type: 2}
   sprintClip: {fileID: 7400000, guid: e00a96682e88d6c478b83717c08bf4f7, type: 2}
   walkAnchorSpeed: 1.8
-  runAnchorSpeed: 3.8
-  sprintAnchorSpeed: 5
+  runAnchorSpeed: 2.8
+  sprintAnchorSpeed: 3.2
   idleMaxSpeed: 0.25
   blendResponsiveness: 8
   freezeInPlaceWithoutIdle: 1
