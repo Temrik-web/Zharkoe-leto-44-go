@@ -22,10 +22,36 @@ namespace ZharkoeLeto44.AI
         [SerializeField, Min(0.5f)] private float speedAcceleration = 2.5f;
         [Tooltip("Торможение текущей скорости, м/с². Убирает резкую остановку.")]
         [SerializeField, Min(0.5f)] private float speedDeceleration = 5f;
+        [Tooltip("Разгон на ПЕРЕБЕЖКЕ, м/с². Отдельный от обычного: с 2.5 м/с² перебежка " +
+                 "выглядела «вязкой» — солдат долго раскачивался на месте, прежде чем " +
+                 "разогнаться. Солдат должен срываться в перебежку решительно.")]
+        [SerializeField, Min(1f)] private float sprintAcceleration = 12f;
+        [Tooltip("Торможение на перебежке, м/с².")]
+        [SerializeField, Min(1f)] private float sprintDeceleration = 16f;
         [Tooltip("Насколько резко скорость режется у самой точки: 0 — полный разгон " +
                  "до упора, 1 — плавное подтормаживание. По умолчанию солдат мягко " +
                  "подходит к точке, а не тормозит на месте.")]
         [SerializeField, Range(0f, 1f)] private float arriveDamping = 0.75f;
+
+        [Header("Проверка пути")]
+        [Tooltip("Проверять ли, что до точки действительно есть путь (а не только точка " +
+                 "на NavMesh). Точка «через стену» на навмеше есть, но пути до неё нет.")]
+        [SerializeField] private bool validatePath = true;
+        [Tooltip("Во сколько раз длина пути может превышать прямую дистанцию. " +
+                 "Больше — солдат идёт в обход, а не сквозь стену.")]
+        [SerializeField, Min(1f)] private float maxPathLengthRatio = 2.5f;
+
+        [Header("NavMeshAgent: согласование с мотором")]
+        [Tooltip("Разгон агента, м/с². Ставим высокий: иначе у агента СВОЙ разгон " +
+                 "(в префабе 12) и он спорит с разгоном мотора — солдат стартует " +
+                 "рывком независимо от настроек ИИ.")]
+        [SerializeField, Min(0f)] private float agentAccelerationOverride = 60f;
+        [Tooltip("Отключить автоторможение агента (autoBraking): тормозит мотор, " +
+                 "иначе двойное торможение (агент + мотор) и солдат «проседает» на месте.")]
+        [SerializeField] private bool disableAgentAutoBraking = true;
+        [Tooltip("Радиус агента, м. Должен совпадать с радиусом тела, иначе солдаты " +
+                 "протискиваются друг сквозь друга.")]
+        [SerializeField, Min(0.05f)] private float agentRadius = 0.4f;
 
         [Header("Режим без NavMesh")]
         [Tooltip("Разрешить ходьбу без запечённого NavMesh. Выключи, если ходьба " +
@@ -135,6 +161,7 @@ namespace ZharkoeLeto44.AI
         private bool _isGrounded = true;
         private bool _blockedCompletely;
         private bool _autoRotation = true;
+        private bool _manualRotation;
 
         private Vector3 _previousPosition;
         private Vector3 _measuredVelocity;
@@ -145,6 +172,17 @@ namespace ZharkoeLeto44.AI
         private Vector3 _lastProgressPos;
         private float _lastProgressTime;
         private float _nextNavMeshCheckTime;
+        private bool _sprintMode;
+
+        // NavMeshPath НЕЛЬЗЯ создавать в инициализаторе поля: Unity выдаёт
+        // "InitializeNavMeshPath is not allowed to be called from a MonoBehaviour
+        // constructor", из-за чего падал конструктор и ПОСЛЕ него не создавались
+        // буферы рейкастов (были null → NRE в TryFindGround). Создаём в Awake.
+        private NavMeshPath _path;
+        // Буфер углов пути: NavMeshPath.corners каждый раз создаёт массив,
+        // а путь считается несколько раз в секунду на каждого солдата.
+        private readonly Vector3[] _pathCorners = new Vector3[32];
+
         private static bool s_fallbackNoticeShown;
         private static bool s_fallbackDisabledNoticeShown;
         private readonly Collider[] _obstacleCheckBuffer = new Collider[8];
@@ -161,11 +199,23 @@ namespace ZharkoeLeto44.AI
             _agent = GetComponent<NavMeshAgent>();
             _controller = GetComponent<CharacterController>();
             _previousPosition = transform.position;
+            if (_path == null) _path = new NavMeshPath();
 
             if (groundOffset <= 0f) groundOffset = MeasureGroundOffset();
 
             _agent.stoppingDistance = Mathf.Min(_agent.stoppingDistance, arriveRadius);
             _autoRotation = _agent.updateRotation;
+
+            // Согласование агента с мотором. Мотор сам управляет разгоном и
+            // торможением (_agent.speed), поэтому:
+            //  • acceleration агента поднимаем — иначе агент разгоняется по-своему
+            //    (в префабе 12 м/с²) и моторный разгон 2.5 не имеет значения;
+            //  • autoBraking выключаем — иначе агент тормозит сам, дублируя
+            //    торможение мотора (солдат «проседает» у точки);
+            //  • радиус выравниваем с телом, иначе солдаты проходят друг сквозь друга.
+            if (agentAccelerationOverride > 0f) _agent.acceleration = agentAccelerationOverride;
+            if (disableAgentAutoBraking) _agent.autoBraking = false;
+            if (agentRadius > 0.05f) _agent.radius = agentRadius;
         }
 
         private float MeasureGroundOffset()
@@ -205,6 +255,45 @@ namespace ZharkoeLeto44.AI
             _desiredSpeed = Mathf.Max(0f, speed);
         }
 
+        /// <summary>
+        /// Режим перебежки: разгон/торможение заметно резче обычных. ИИ включает его
+        /// на время рывка (роль «Манёвр»).
+        /// </summary>
+        public void SetSprintMode(bool sprint)
+        {
+            _sprintMode = sprint;
+        }
+
+        /// <summary>
+        /// Свой приоритет обхода у каждого солдата: у всех в префабе был
+        /// avoidancePriority = 50, и в проёмах солдаты толкались друг в друга.
+        /// </summary>
+        public void SetAvoidancePriority(int priority)
+        {
+            if (_agent == null) return;
+            _agent.avoidancePriority = Mathf.Clamp(priority, 0, 99);
+        }
+
+        /// <summary>
+        /// Длина пути до точки по NavMesh. false — пути нет (точка недостижима).
+        /// </summary>
+        public bool TryGetPathLength(Vector3 destination, out float length)
+        {
+            length = 0f;
+            if (Mode != MotorMode.NavMesh || !AgentUsable) return false;
+            if (_path == null) return false;
+
+            if (!NavMesh.CalculatePath(transform.position, destination, NavMesh.AllAreas, _path))
+                return false;
+            if (_path.status != NavMeshPathStatus.PathComplete) return false;
+
+            int corners = _path.GetCornersNonAlloc(_pathCorners);
+            length = 0f;
+            for (int i = 1; i < corners; i++)
+                length += Vector3.Distance(_pathCorners[i - 1], _pathCorners[i]);
+            return length > 0f;
+        }
+
         public bool MoveTo(Vector3 target)
         {
             if (snapDestinationToGround) target = SnapDestinationY(target);
@@ -213,6 +302,8 @@ namespace ZharkoeLeto44.AI
             _stopping = false;
             _blockedCompletely = false;
             _destinationSetTime = Time.time;
+            // Новый приказ на движение — тело снова ведёт агент (по маршруту).
+            SetManualRotation(false);
 
             if (Mode == MotorMode.NavMesh)
             {
@@ -250,7 +341,8 @@ namespace ZharkoeLeto44.AI
                 }
 
                 _stopping = true;
-                _stopUntil = Time.time + _agent.speed / speedDeceleration + 0.15f;
+                float brake = _sprintMode ? sprintDeceleration : speedDeceleration;
+                _stopUntil = Time.time + _agent.speed / brake + 0.15f;
                 _agent.isStopped = false;
             }
         }
@@ -275,13 +367,25 @@ namespace ZharkoeLeto44.AI
             return FlatDistance(transform.position, _destination) <= arriveRadius;
         }
         public bool SampleReachablePoint(Vector3 desired, float searchRadius, out Vector3 result)
+            => SampleReachablePoint(desired, searchRadius, out result, false);
+
+        /// <summary>
+        /// Точка, до которой реально можно дойти. При requirePath=true проверяется
+        /// ПОЛНЫЙ путь: точка может лежать на NavMesh, но быть за стеной (пути нет).
+        /// </summary>
+        public bool SampleReachablePoint(Vector3 desired, float searchRadius, out Vector3 result,
+            bool requirePath)
         {
             if (Mode == MotorMode.NavMesh && AgentUsable)
             {
                 if (NavMesh.SamplePosition(desired, out NavMeshHit navHit, searchRadius, NavMesh.AllAreas))
                 {
                     result = navHit.position;
-                    return true;
+                    if (!requirePath || !validatePath) return true;
+
+                    if (!TryGetPathLength(result, out float pathLength)) return false;
+                    float straight = FlatDistance(transform.position, result);
+                    return pathLength <= straight * maxPathLengthRatio + 1f;
                 }
 
                 result = desired;
@@ -336,6 +440,29 @@ namespace ZharkoeLeto44.AI
                 EaseTurnSpeed(transform.rotation, target, degreesPerSecond) * Time.deltaTime);
         }
 
+        /// <summary>
+        /// Доворот корпуса на заданный УГОЛ РЫСКАНИЯ (мировые градусы) с ограничением
+        /// скорости. Нужен для «осматривания» и поиска: поворот идёт ТОЛЬКО через мотор,
+        /// чтобы NavMeshAgent не спорил с ИИ за угол тела.
+        /// </summary>
+        public void FaceYawAtSpeed(float targetYaw, float degreesPerSecond)
+        {
+            Quaternion target = Quaternion.Euler(0f, targetYaw, 0f);
+            transform.rotation = Quaternion.RotateTowards(
+                transform.rotation, target,
+                EaseTurnSpeed(transform.rotation, target, degreesPerSecond) * Time.deltaTime);
+        }
+
+        /// <summary>
+        /// Ручное управление поворотом корпуса. true — агент не крутит тело сам
+        /// (ИИ ведёт взгляд/прицел), false — агент снова ведёт тело по маршруту.
+        /// </summary>
+        public void SetManualRotation(bool manual)
+        {
+            _manualRotation = manual;
+            if (_agent != null) _agent.updateRotation = _autoRotation && !manual;
+        }
+
         public static float EaseTurnSpeed(Quaternion current, Quaternion target, float maxSpeed)
         {
             float angle = Quaternion.Angle(current, target);
@@ -345,7 +472,7 @@ namespace ZharkoeLeto44.AI
         public void SetAutoRotation(bool enabled)
         {
             _autoRotation = enabled;
-            if (_agent != null) _agent.updateRotation = enabled;
+            if (_agent != null) _agent.updateRotation = enabled && !_manualRotation;
         }
 
         public void Disable()
@@ -390,9 +517,14 @@ namespace ZharkoeLeto44.AI
                 }
                 else
                 {
-                    float rate = _desiredSpeed > _agent.speed
-                        ? speedAcceleration
-                        : speedDeceleration;
+                    // Разгон/торможение: обычный или резкий (перебежка).
+                    bool accelerating = _desiredSpeed > _agent.speed;
+                    float rate;
+                    if (_sprintMode)
+                        rate = accelerating ? sprintAcceleration : sprintDeceleration;
+                    else
+                        rate = accelerating ? speedAcceleration : speedDeceleration;
+
                     _agent.speed = Mathf.MoveTowards(_agent.speed, DampedSpeed(), rate * dt);
                 }
             }

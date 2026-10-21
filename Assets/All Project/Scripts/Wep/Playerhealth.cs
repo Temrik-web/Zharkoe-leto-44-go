@@ -37,12 +37,14 @@ public class PlayerHealth : MonoBehaviour
 
     private void OnEnable()
     {
+        EnemyAI.RegisterPlayer(Health);
         Health.Damaged += HandleDamage;
         Health.Died += HandleDeath;
     }
 
     private void OnDisable()
     {
+        EnemyAI.UnregisterPlayer(Health);
         if (_respawnRoutine != null)
         {
             StopCoroutine(_respawnRoutine);

@@ -167,6 +167,19 @@ public static class GermanAccent
         Add("tot", "тот");
         Add("kamerad", "камерад");
         Add("kameraden", "камерадэн");
+        // Побор, налёт на деревню (требования, приказы, грабёж)
+        Add("auf", "ауп");
+        Add("und", "унд");
+        Add("schnell", "шнэль");
+        Add("mann", "ман");
+        Add("sechs", "зекс");
+        Add("wie", "ви");
+        Add("du", "ду");
+        Add("willst", "вильст");
+        Add("kämpfen", "кэмпфэн");
+        Add("kampfen", "кэмпфэн");
+        Add("wiedersehen", "видерзэен");
+
         Add("deutschland", "дойчланд");
         Add("fuhrer", "фюрер");
         Add("russland", "руссланд");

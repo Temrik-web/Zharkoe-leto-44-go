@@ -36,6 +36,21 @@ public class CombatRegressionTests
         return health;
     }
 
+    /// <summary>Команда персонажа (поле приватное — ставим рефлексией).</summary>
+    private static void SetTeam(CharacterHealth health, Team team)
+    {
+        typeof(CharacterHealth).GetField("team", BindingFlags.NonPublic | BindingFlags.Instance)
+            .SetValue(health, team);
+    }
+
+    private static HitscanWeapon CreateGun(CharacterHealth shooter, float spread = 0f)
+    {
+        var gun = shooter.gameObject.AddComponent<HitscanWeapon>();
+        typeof(HitscanWeapon).GetField("spreadAngle", BindingFlags.NonPublic | BindingFlags.Instance)
+            .SetValue(gun, spread);
+        return gun;
+    }
+
     [Test]
     public void PlayerAdapterUsesTheSameHealthForDamageAndHealing()
     {
@@ -146,14 +161,79 @@ public class CombatRegressionTests
     {
         var shooter = Target("Shooter", Vector3.zero);
         var target = Target("Target", Vector3.forward * 4f);
-        var gun = shooter.gameObject.AddComponent<HitscanWeapon>();
-        typeof(HitscanWeapon).GetField("spreadAngle", BindingFlags.NonPublic | BindingFlags.Instance)
-            .SetValue(gun, 0f);
+        // Разные команды: дружественный огонь по умолчанию выключен.
+        SetTeam(shooter, Team.Allies);
+        SetTeam(target, Team.Axis);
+        var gun = CreateGun(shooter);
         Physics.SyncTransforms();
         Assert.That(gun.TryFire(target.transform.position, shooter.gameObject), Is.True);
         Assert.That(target.CurrentHealth, Is.EqualTo(75f));
         Assert.That(shooter.CurrentHealth, Is.EqualTo(100f));
-        Assert.That(gun.AmmunitionInMagazine, Is.EqualTo(29));
+        Assert.That(gun.AmmunitionInMagazine, Is.EqualTo(31));
+    }
+
+    [Test]
+    public void EnemyGunPassesThroughFriendlySoldierInTheLine()
+    {
+        var shooter = Target("Shooter", Vector3.zero);
+        var ally = Target("Ally", Vector3.forward * 2f);
+        var target = Target("Target", Vector3.forward * 4f);
+        SetTeam(shooter, Team.Allies);
+        SetTeam(ally, Team.Allies);
+        SetTeam(target, Team.Axis);
+        var gun = CreateGun(shooter);
+        Physics.SyncTransforms();
+
+        Assert.That(gun.TryFire(target.transform.position, shooter.gameObject), Is.True);
+        // Своего не задел...
+        Assert.That(ally.CurrentHealth, Is.EqualTo(100f));
+        // ...а цель получила урон.
+        Assert.That(target.CurrentHealth, Is.EqualTo(75f));
+    }
+
+    [Test]
+    public void FriendlySoldierIsReportedAsBlockingTheShot()
+    {
+        var shooter = Target("Shooter", Vector3.zero);
+        var ally = Target("Ally", Vector3.forward * 2f);
+        var target = Target("Target", Vector3.forward * 4f);
+        SetTeam(shooter, Team.Allies);
+        SetTeam(ally, Team.Allies);
+        SetTeam(target, Team.Axis);
+        var gun = CreateGun(shooter);
+        Physics.SyncTransforms();
+
+        bool clear = gun.HasClearShot(target.transform.position, shooter.gameObject,
+            out bool blockedByAlly);
+        Assert.That(clear, Is.False);
+        Assert.That(blockedByAlly, Is.True);
+    }
+
+    [UnityTest]
+    public IEnumerator EnemyNoticesPlayerStandingInFront()
+    {
+        // Игрок с командой Allies, солдат с командой Axis — солдат обязан его увидеть.
+        var player = Target("Player", Vector3.zero);
+        SetTeam(player, Team.Allies);
+
+        var enemyGo = new GameObject("Enemy");
+        enemyGo.transform.SetParent(root.transform);
+        enemyGo.transform.position = new Vector3(0f, 0f, 10f);
+        var enemyHealth = enemyGo.AddComponent<CharacterHealth>();
+        SetTeam(enemyHealth, Team.Axis);
+        var ai = enemyGo.AddComponent<EnemyAI>();
+
+        // Смотрим на игрока.
+        enemyGo.transform.rotation = Quaternion.LookRotation(
+            (player.transform.position - enemyGo.transform.position).normalized);
+        Physics.SyncTransforms();
+
+        float deadline = Time.time + 4f;
+        while (Time.time < deadline && ai.CurrentTarget == null)
+            yield return null;
+
+        Assert.That(ai.CurrentTarget, Is.Not.Null, "Враг не заметил игрока перед собой.");
+        Assert.That(ai.Awareness, Is.GreaterThan(0.5f));
     }
 
     private ThrownGrenade CreateGrenade()

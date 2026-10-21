@@ -2,7 +2,7 @@ using UnityEngine;
 using ZharkoeLeto44.AI;
 
 /// <summary>
-/// Немец, который стучит в дверь и просит еду. До сигнала (свиста) — мирный:
+/// Немец, который стучит в дверь и требует еду. До сигнала (свиста) — мирный:
 /// ИИ выключен, оружие спрятано, стоит лицом к игроку.
 /// После свиста может броситься в бой (GoHostile) или уйти (Leave).
 /// </summary>
@@ -18,6 +18,18 @@ public class GermanBeggar : MonoBehaviour
     public float walkSpeed = 2.4f;
     [Tooltip("Скорость поворота к игроку, град/с.")]
     public float faceTurnSpeed = 90f;
+
+    [Header("Поза у двери")]
+    [Tooltip("Анимация, когда немец стоит у двери и ждёт (клип выбирается в инспекторе). " +
+             "Пусто — обычный idle из EnemyAnimator.")]
+    public AnimationClip standAnimation;
+    [Tooltip("Играть позу ожидания, пока немец стоит у двери.")]
+    public bool playStandAnimation = true;
+
+    [Header("Мирный режим")]
+    [Tooltip("Немец никогда не вступает в бой: даже если сценарий попросит. " +
+             "Он стоит у двери, стучит и говорит.")]
+    public bool stayPeaceful = true;
 
     [Header("Звук")]
     [Tooltip("Свист: сигнал для остальных немцев.")]
@@ -37,6 +49,9 @@ public class GermanBeggar : MonoBehaviour
     private GameObject cachedPlayer;
     private HitscanWeapon weapon;
     private GameObject weaponObject;
+    private EnemyAnimator animatorDriver;
+    private Animator plainAnimator;
+    private bool standPoseActive;
     private Vector3 leaveTarget;
     private bool hasLeaveTarget;
     private Vector3 walkTarget;
@@ -63,11 +78,18 @@ public class GermanBeggar : MonoBehaviour
         if (Motor == null) Motor = GetComponent<EnemyMotor>();
         if (weapon == null) weapon = GetComponentInChildren<HitscanWeapon>(true);
         if (weapon != null && weaponObject == null) weaponObject = weapon.gameObject;
+        if (animatorDriver == null) animatorDriver = GetComponentInChildren<EnemyAnimator>(true);
+        if (plainAnimator == null) plainAnimator = GetComponentInChildren<Animator>(true);
     }
 
     void Update()
     {
-        if (IsHostile || IsLeaving) return;
+        if (IsHostile) return;
+        if (IsLeaving)
+        {
+            DriveLocomotion(true);
+            return;
+        }
         if (Ai == null || Motor == null) EnsureRefs();
 
         if (IsWalking)
@@ -92,11 +114,72 @@ public class GermanBeggar : MonoBehaviour
             if (Motor != null && !Motor.HasDestination)
                 Motor.MoveTo(walkTarget);
 
-            if (ReachedWalkTarget()) IsWalking = false;
+            DriveLocomotion(true);
+
+            if (ReachedWalkTarget())
+            {
+                IsWalking = false;
+                StopMotor();
+            }
             return;
         }
 
         FacePlayer();
+        KeepPeace();
+        DriveLocomotion(false);
+        PlayStandPose();
+    }
+
+    /// <summary>Мирный режим держим, даже если кто-то включит ИИ снаружи.</summary>
+    void KeepPeace()
+    {
+        if (!stayPeaceful) return;
+        if (Ai != null && Ai.enabled) Ai.enabled = false;
+        if (weapon != null && weapon.enabled) weapon.enabled = false;
+        if (hideWeapon && weaponObject != null && weaponObject != gameObject && weaponObject.activeSelf)
+            weaponObject.SetActive(false);
+    }
+
+    /// <summary>
+    /// Локомоция вручную: ИИ у немца выключен, поэтому анимацию двигает сам
+    /// (иначе он скользит статуей). Есть EnemyAnimator — играем через него.
+    /// </summary>
+    void DriveLocomotion(bool moving)
+    {
+        if (animatorDriver == null) return;
+        float speed = moving && Motor != null ? Motor.Velocity.magnitude : 0f;
+        animatorDriver.SetLocomotion(speed, moving);
+    }
+
+    /// <summary>Поза ожидания у двери (клип из инспектора).</summary>
+    void PlayStandPose()
+    {
+        if (!playStandAnimation || standAnimation == null) return;
+        if (standPoseActive) return;
+        standPoseActive = true;
+
+        if (animatorDriver != null)
+        {
+            animatorDriver.PlayStandPose(standAnimation);
+            return;
+        }
+
+        // Без EnemyAnimator — обычный Animator с контроллером.
+        if (plainAnimator != null && plainAnimator.runtimeAnimatorController != null)
+            plainAnimator.CrossFade(standAnimation.name, 0.2f);
+    }
+
+    /// <summary>Снять позу ожидания (пошёл — снова локомоция).</summary>
+    void ClearStandPose()
+    {
+        if (!standPoseActive) return;
+        standPoseActive = false;
+        if (animatorDriver != null) animatorDriver.ClearStandPose();
+    }
+
+    void StopMotor()
+    {
+        if (Motor != null) Motor.Stop();
     }
 
     /// <summary>Дошёл ли до точки (по расстоянию, а не по флажку агента).</summary>
@@ -152,6 +235,7 @@ public class GermanBeggar : MonoBehaviour
         EnsureRefs();
         IsWalking = true;
         IsLeaving = false;
+        ClearStandPose();
         walkArriveDistance = arriveDistance;
         walkTarget = destination;
         lastWalkCheckTime = Time.time;
@@ -231,8 +315,17 @@ public class GermanBeggar : MonoBehaviour
     {
         EnsureRefs();
         if (IsHostile) return;
+
+        if (stayPeaceful)
+        {
+            // Режим «просто поговорить»: немец стоит у двери и в бой не идёт.
+            Debug.Log($"[GermanBeggar] {name}: stayPeaceful включён — в бой не вступаю, стою у двери.", this);
+            return;
+        }
+
         IsHostile = true;
         IsLeaving = false;
+        ClearStandPose();
 
         if (weaponObject != null && hideWeapon) weaponObject.SetActive(true);
         if (weapon != null) weapon.enabled = true;
@@ -249,6 +342,7 @@ public class GermanBeggar : MonoBehaviour
         EnsureRefs();
         IsLeaving = true;
         IsHostile = false;
+        ClearStandPose();
 
         if (Motor == null)
         {

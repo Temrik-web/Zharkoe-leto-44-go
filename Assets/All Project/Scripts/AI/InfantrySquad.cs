@@ -13,6 +13,9 @@ namespace ZharkoeLeto44.AI
         // Черновики без аллокаций: считаются каждый кадр для каждого солдата.
         private static readonly List<EnemyAI> s_members = new();
 
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetStatics() => s_members.Clear();
+
         internal static EnemyAI FindNearestAlly(EnemyAI self, out float distance)
         {
             distance = float.MaxValue;
@@ -42,6 +45,9 @@ namespace ZharkoeLeto44.AI
         /// lateral — сдвиг вбок, м; depth — сдвиг по глубине (ближе/дальше), м.
         /// Порядок определяется текущим боковым положением солдат: левый остаётся
         /// слевым, правый — правым, поэтому никто не перебегает через строй.
+        /// Учитываются ТОЛЬКО союзники по отряду: живые, в пределах
+        /// squadAwarenessRadius и находящиеся в погоне/бою. Раньше считались все
+        /// солдаты уровня — при 20 солдатах строй «схлопывался» в точку.
         /// </summary>
         internal static void ComputeFormationSlot(EnemyAI self, Vector3 center, Vector3 right,
             out float lateral, out float depth)
@@ -51,11 +57,15 @@ namespace ZharkoeLeto44.AI
 
             List<EnemyAI> soldiers = EnemyAI.RegisteredSoldiers;
             s_members.Clear();
+            float radius = self.SquadAwarenessRadius;
+            Vector3 selfPosition = self.transform.position;
             for (int i = 0; i < soldiers.Count; i++)
             {
                 EnemyAI other = soldiers[i];
                 if (other == null || other == self) continue;
                 if (!other.IsSquadAlive || other.SquadTeam != self.SquadTeam) continue;
+                if (!other.IsInEngagement) continue;
+                if (FlatDistance(selfPosition, other.transform.position) > radius) continue;
                 s_members.Add(other);
             }
 
@@ -74,7 +84,10 @@ namespace ZharkoeLeto44.AI
                 if (Vector3.Dot(relative, right) < selfLateral) rank++;
             }
 
-            float spacing = self.SquadLateralSpread / Mathf.Max(1, count - 1);
+            // Минимальный интервал — не меньше дистанции расхождения. Иначе при
+            // пяти солдатах на 9 м строя шаг 2.25 м, и отряд выглядит кучей.
+            float spacing = Mathf.Max(self.SquadSeparationDistance,
+                self.SquadLateralSpread / Mathf.Max(1, count - 1));
             lateral = (rank - (count - 1) * 0.5f) * spacing;
             depth = (rank % 2 == 0 ? -0.5f : 0.5f) * self.SquadDepthSpread;
         }
@@ -105,12 +118,16 @@ namespace ZharkoeLeto44.AI
         {
             if (minDistance <= 0f) return false;
 
+            float radius = self.SquadAwarenessRadius;
             List<EnemyAI> soldiers = EnemyAI.RegisteredSoldiers;
             for (int i = 0; i < soldiers.Count; i++)
             {
                 EnemyAI other = soldiers[i];
                 if (other == null || other == self) continue;
                 if (!other.IsSquadAlive || other.SquadTeam != self.SquadTeam) continue;
+                // Сосед по отряду — только тот, кто рядом. Солдат на другом краю
+                // уровня не мешает выбрать точку.
+                if (FlatDistance(point, other.transform.position) > radius) continue;
                 if (FlatDistance(point, other.transform.position) < minDistance) return true;
             }
 

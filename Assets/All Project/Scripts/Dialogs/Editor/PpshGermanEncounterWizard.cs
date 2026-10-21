@@ -206,7 +206,6 @@ public static class PpshGermanEncounterWizard
 
         // Ставим на модель весь боевой набор скриптов.
         EnemySetupWizard.SetupSelectedAsEnemy();
-        AddMp40ToHands(selected);
 
         string folder = System.IO.Path.GetDirectoryName(GermanPrefabPath);
         if (!AssetDatabase.IsValidFolder(folder))
@@ -227,36 +226,6 @@ public static class PpshGermanEncounterWizard
             Debug.Log($"[PpshGerman] Префаб немца собран: {GermanPrefabPath}. " +
                       "Теперь запусти «Настроить сцену» — префаб подставится сам.", prefab);
         }
-    }
-
-    /// <summary>Кладёт модель Mp40 в руки, если оружия в руках ещё нет.</summary>
-    static void AddMp40ToHands(GameObject root)
-    {
-        GameObject weapon = FindDeepChild(root.transform, "Weapon");
-        if (weapon == null) return;
-        if (weapon.GetComponentInChildren<Renderer>(true) != null) return;
-
-        GameObject model = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/All Project/Models/Mp40/Mp40.fbx");
-        if (model == null) return;
-
-        GameObject instance = (GameObject)PrefabUtility.InstantiatePrefab(model);
-        instance.name = "Mp40";
-        instance.transform.SetParent(weapon.transform, false);
-        instance.transform.localPosition = new Vector3(0.22f, 0f, 0f);
-        instance.transform.localRotation = Quaternion.Euler(0f, 90f, 0f);
-        instance.transform.localScale = Vector3.one * 0.16f;
-        Undo.RegisterCreatedObjectUndo(instance, "Add Mp40");
-    }
-
-    static GameObject FindDeepChild(Transform parent, string childName)
-    {
-        if (parent.name == childName) return parent.gameObject;
-        foreach (Transform child in parent)
-        {
-            GameObject found = FindDeepChild(child, childName);
-            if (found != null) return found;
-        }
-        return null;
     }
 
     // ------------------------------------------------------------------

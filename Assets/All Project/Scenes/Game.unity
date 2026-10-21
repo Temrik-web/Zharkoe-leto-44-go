@@ -1986,15 +1986,21 @@ MonoBehaviour:
   fieldOfView: 110
   verticalViewTolerance: 6
   closeDetectDistance: 7
+  instantDetectDistance: 15
   perceptionInterval: 0.15
+  perceptionTickJitter: 0.15
   targetMemoryDuration: 8
   hearingRadiusMultiplier: 1.5
+  maxHearingDistance: 140
+  hearingPositionErrorRatio: 0.08
   hearingSensitivity: 1.3
   hearingThreshold: 0.06
   timeToDetect: 0.9
   awarenessDecay: 0.35
   reactionTime: 0.55
   patrolSpeed: 1.8
+  alertSpeed: 2.2
+  sprintSpeedMultiplier: 1.25
   pointWaitDuration: 2
   pointReachRadius: 0.6
   wanderWhenNoRoute: 1
@@ -2009,7 +2015,6 @@ MonoBehaviour:
   lookAroundHoldMin: 0.6
   lookAroundHoldMax: 1.2
   chaseSpeed: 2.8
-  combatApproachSpeed: 1.6
   preferredCombatDistance: 20
   maximumCombatDistance: 38
   useSquadTactics: 1
@@ -2025,7 +2030,33 @@ MonoBehaviour:
   squadSeparationDistance: 4.5
   squadSeparationStrength: 0.8
   combatAnchorTolerance: 1.2
+  combatRangeSlack: 5
   combatAnchorTrackSpeed: 1.5
+  maxShooters: 3
+  squadCommitTime: 1.5
+  maneuverDistance: 10
+  tacticMinTargetDistance: 6
+  woundedHealthThreshold: 0.35
+  woundedFireRateScale: 1.8
+  coverPeekDuration: 1.6
+  coverHideDuration: 1.8
+  tacticalMinimumBurst: 3
+  tacticalMaximumBurst: 8
+  tacticalMinimumPause: 0.4
+  tacticalMaximumPause: 1.2
+  spreadUnseenMultiplier: 2
+  spreadSeenMultiplier: 0.8
+  spreadSettleTime: 3
+  suddenTargetReactionDelay: 0.3
+  chaseLeadTime: 1.2
+  chaseLeadMaxDistance: 6
+  contactShareDelay: {x: 0.3, y: 1}
+  contactShareDelayScale: 0.25
+  contactAlertRadius: 45
+  radioInterval: 1.2
+  allyGunshotRadius: 120
+  allyNoiseMinRadius: 12
+  searchPointCount: 3
   openingDuration: 4
   openingSpread: 0.55
   midFightSpread: 1.25
@@ -2039,6 +2070,7 @@ MonoBehaviour:
   - 1.2
   pacingDamageJitter: 0.15
   combatLoseSightGrace: 0.4
+  engageResetDelay: 10
   combatTurnSpeed: 115
   jitterReaction: 1
   burstClimb: 0.35
@@ -2056,11 +2088,12 @@ MonoBehaviour:
   movingSpreadMultiplier: 2.2
   suppressedSpreadMultiplier: 3
   leadAccuracy: 0.6
-  maxFireAngle: 8
+  maxFireAngle: 20
   suppressionDecay: 0.6
   pathRefreshInterval: 0.25
   corpseLifetime: 5
   debugLogging: 0
+  debugOverlay: 0
 --- !u!114 &65208808
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2182,7 +2215,14 @@ MonoBehaviour:
   turnSpeed: 100
   speedAcceleration: 3.5
   speedDeceleration: 6
+  sprintAcceleration: 12
+  sprintDeceleration: 16
   arriveDamping: 0.75
+  validatePath: 1
+  maxPathLengthRatio: 2.5
+  agentAccelerationOverride: 60
+  disableAgentAutoBraking: 1
+  agentRadius: 0.4
   allowFallbackMovement: 1
   navMeshRecheckInterval: 1
   navMeshSnapRadius: 3
@@ -2303,6 +2343,12 @@ MonoBehaviour:
   walkClip: {fileID: 7400000, guid: 6ed2cbee4c1fa7f4aaa102a7346f7fce, type: 2}
   runClip: {fileID: 7400000, guid: e00a96682e88d6c478b83717c08bf4f7, type: 2}
   sprintClip: {fileID: 7400000, guid: e00a96682e88d6c478b83717c08bf4f7, type: 2}
+  strafeLeftClip: {fileID: 0}
+  strafeRightClip: {fileID: 0}
+  walkBackClip: {fileID: 0}
+  aimIdleClip: {fileID: 0}
+  aimWalkClip: {fileID: 0}
+  upperBodyMask: {fileID: 0}
   walkAnchorSpeed: 1.8
   runAnchorSpeed: 2.8
   sprintAnchorSpeed: 3.2
@@ -2311,6 +2357,7 @@ MonoBehaviour:
   freezeInPlaceWithoutIdle: 1
   lockScales: 1
   shootClip: {fileID: 0}
+  shootRecoilClip: {fileID: 0}
   reloadClip: {fileID: 0}
   hitClip: {fileID: 0}
   deathClips:
@@ -5424,6 +5471,7 @@ MonoBehaviour:
     serializedVersion: 2
     m_Bits: 4294967295
   triggerInteraction: 1
+  allowFriendlyFire: 0
   magazineCapacity: 32
   startingReserve: 128
   reloadDuration: 2.4
@@ -5434,6 +5482,7 @@ MonoBehaviour:
   tracerColor: {r: 1, g: 0.8, b: 0.25, a: 1}
   tracerWidth: 0.025
   tracerLifetime: 0.06
+  tracerPoolSize: 8
 --- !u!82 &184712502
 AudioSource:
   m_ObjectHideFlags: 0
@@ -10541,6 +10590,7 @@ MonoBehaviour:
     serializedVersion: 2
     m_Bits: 4294967295
   triggerInteraction: 1
+  allowFriendlyFire: 0
   magazineCapacity: 32
   startingReserve: 128
   reloadDuration: 2.4
@@ -10551,6 +10601,7 @@ MonoBehaviour:
   tracerColor: {r: 1, g: 0.8, b: 0.25, a: 1}
   tracerWidth: 0.025
   tracerLifetime: 0.06
+  tracerPoolSize: 8
 --- !u!82 &376388376
 AudioSource:
   m_ObjectHideFlags: 0
@@ -16040,6 +16091,111 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: d463197cebccf6e4fa6161d8384b66ed, type: 3}
+--- !u!1 &535767112
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 535767113}
+  - component: {fileID: 535767116}
+  - component: {fileID: 535767115}
+  - component: {fileID: 535767114}
+  m_Layer: 0
+  m_Name: Cube (1)
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &535767113
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 535767112}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 6.556, y: 37.189, z: 47.418}
+  m_LocalScale: {x: 0.41674, y: 0.41674, z: 0.41674}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1397494078}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!65 &535767114
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 535767112}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 1, y: 1, z: 1}
+  m_Center: {x: 0, y: 0, z: 0}
+--- !u!23 &535767115
+MeshRenderer:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 535767112}
+  m_Enabled: 1
+  m_CastShadows: 1
+  m_ReceiveShadows: 1
+  m_DynamicOccludee: 1
+  m_StaticShadowCaster: 0
+  m_MotionVectors: 1
+  m_LightProbeUsage: 1
+  m_ReflectionProbeUsage: 1
+  m_RayTracingMode: 2
+  m_RayTraceProcedural: 0
+  m_RenderingLayerMask: 1
+  m_RendererPriority: 0
+  m_Materials:
+  - {fileID: 2100000, guid: 31321ba15b8f8eb4c954353edc038b1d, type: 2}
+  m_StaticBatchInfo:
+    firstSubMesh: 0
+    subMeshCount: 0
+  m_StaticBatchRoot: {fileID: 0}
+  m_ProbeAnchor: {fileID: 0}
+  m_LightProbeVolumeOverride: {fileID: 0}
+  m_ScaleInLightmap: 1
+  m_ReceiveGI: 1
+  m_PreserveUVs: 0
+  m_IgnoreNormalsForChartDetection: 0
+  m_ImportantGI: 0
+  m_StitchLightmapSeams: 1
+  m_SelectedEditorRenderState: 3
+  m_MinimumChartSize: 4
+  m_AutoUVMaxDistance: 0.5
+  m_AutoUVMaxAngle: 89
+  m_LightmapParameters: {fileID: 0}
+  m_SortingLayerID: 0
+  m_SortingLayer: 0
+  m_SortingOrder: 0
+  m_AdditionalVertexStreams: {fileID: 0}
+--- !u!33 &535767116
+MeshFilter:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 535767112}
+  m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
 --- !u!4 &535843193 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: 5e6fb2fb517936d46901a5b5b0d952a4, type: 3}
@@ -20740,6 +20896,7 @@ MonoBehaviour:
   knockMessage: "\u041A\u0442\u043E-\u0442\u043E \u0441\u0442\u0443\u0447\u0438\u0442
     \u0432 \u0434\u0432\u0435\u0440\u044C..."
   unlockDoorOnKnock: 1
+  beggarStandAnimation: {fileID: 0}
   shakeOnKnock: 1
   shakeDuration: 0.22
   shakeMagnitude: 0.12
@@ -23724,15 +23881,21 @@ MonoBehaviour:
   fieldOfView: 110
   verticalViewTolerance: 6
   closeDetectDistance: 7
+  instantDetectDistance: 15
   perceptionInterval: 0.15
+  perceptionTickJitter: 0.15
   targetMemoryDuration: 8
   hearingRadiusMultiplier: 1.5
+  maxHearingDistance: 140
+  hearingPositionErrorRatio: 0.08
   hearingSensitivity: 1.3
   hearingThreshold: 0.06
   timeToDetect: 0.9
   awarenessDecay: 0.35
   reactionTime: 0.55
   patrolSpeed: 1.8
+  alertSpeed: 2.2
+  sprintSpeedMultiplier: 1.25
   pointWaitDuration: 2
   pointReachRadius: 0.6
   wanderWhenNoRoute: 1
@@ -23747,7 +23910,6 @@ MonoBehaviour:
   lookAroundHoldMin: 0.6
   lookAroundHoldMax: 1.2
   chaseSpeed: 2.8
-  combatApproachSpeed: 1.6
   preferredCombatDistance: 20
   maximumCombatDistance: 38
   useSquadTactics: 1
@@ -23763,7 +23925,33 @@ MonoBehaviour:
   squadSeparationDistance: 4.5
   squadSeparationStrength: 0.8
   combatAnchorTolerance: 1.2
+  combatRangeSlack: 5
   combatAnchorTrackSpeed: 1.5
+  maxShooters: 3
+  squadCommitTime: 1.5
+  maneuverDistance: 10
+  tacticMinTargetDistance: 6
+  woundedHealthThreshold: 0.35
+  woundedFireRateScale: 1.8
+  coverPeekDuration: 1.6
+  coverHideDuration: 1.8
+  tacticalMinimumBurst: 3
+  tacticalMaximumBurst: 8
+  tacticalMinimumPause: 0.4
+  tacticalMaximumPause: 1.2
+  spreadUnseenMultiplier: 2
+  spreadSeenMultiplier: 0.8
+  spreadSettleTime: 3
+  suddenTargetReactionDelay: 0.3
+  chaseLeadTime: 1.2
+  chaseLeadMaxDistance: 6
+  contactShareDelay: {x: 0.3, y: 1}
+  contactShareDelayScale: 0.25
+  contactAlertRadius: 45
+  radioInterval: 1.2
+  allyGunshotRadius: 120
+  allyNoiseMinRadius: 12
+  searchPointCount: 3
   openingDuration: 4
   openingSpread: 0.55
   midFightSpread: 1.25
@@ -23777,6 +23965,7 @@ MonoBehaviour:
   - 1.2
   pacingDamageJitter: 0.15
   combatLoseSightGrace: 0.4
+  engageResetDelay: 10
   combatTurnSpeed: 115
   jitterReaction: 1
   burstClimb: 0.35
@@ -23794,11 +23983,12 @@ MonoBehaviour:
   movingSpreadMultiplier: 2.2
   suppressedSpreadMultiplier: 3
   leadAccuracy: 0.6
-  maxFireAngle: 8
+  maxFireAngle: 20
   suppressionDecay: 0.6
   pathRefreshInterval: 0.25
   corpseLifetime: 6
   debugLogging: 0
+  debugOverlay: 0
 --- !u!65 &789273444
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -23963,7 +24153,14 @@ MonoBehaviour:
   turnSpeed: 100
   speedAcceleration: 3.5
   speedDeceleration: 6
+  sprintAcceleration: 12
+  sprintDeceleration: 16
   arriveDamping: 0.75
+  validatePath: 1
+  maxPathLengthRatio: 2.5
+  agentAccelerationOverride: 60
+  disableAgentAutoBraking: 1
+  agentRadius: 0.4
   allowFallbackMovement: 1
   navMeshRecheckInterval: 1
   navMeshSnapRadius: 3
@@ -24084,6 +24281,12 @@ MonoBehaviour:
   walkClip: {fileID: 7400000, guid: 6ed2cbee4c1fa7f4aaa102a7346f7fce, type: 2}
   runClip: {fileID: 7400000, guid: e00a96682e88d6c478b83717c08bf4f7, type: 2}
   sprintClip: {fileID: 7400000, guid: e00a96682e88d6c478b83717c08bf4f7, type: 2}
+  strafeLeftClip: {fileID: 0}
+  strafeRightClip: {fileID: 0}
+  walkBackClip: {fileID: 0}
+  aimIdleClip: {fileID: 0}
+  aimWalkClip: {fileID: 0}
+  upperBodyMask: {fileID: 0}
   walkAnchorSpeed: 1.8
   runAnchorSpeed: 2.8
   sprintAnchorSpeed: 3.2
@@ -24092,6 +24295,7 @@ MonoBehaviour:
   freezeInPlaceWithoutIdle: 1
   lockScales: 1
   shootClip: {fileID: 0}
+  shootRecoilClip: {fileID: 0}
   reloadClip: {fileID: 0}
   hitClip: {fileID: 0}
   deathClips:
@@ -24545,6 +24749,7 @@ MonoBehaviour:
     serializedVersion: 2
     m_Bits: 4294967295
   triggerInteraction: 1
+  allowFriendlyFire: 0
   magazineCapacity: 32
   startingReserve: 128
   reloadDuration: 2.4
@@ -24555,6 +24760,7 @@ MonoBehaviour:
   tracerColor: {r: 1, g: 0.8, b: 0.25, a: 1}
   tracerWidth: 0.025
   tracerLifetime: 0.06
+  tracerPoolSize: 8
 --- !u!82 &806684565
 AudioSource:
   m_ObjectHideFlags: 0
@@ -26607,6 +26813,7 @@ MonoBehaviour:
     serializedVersion: 2
     m_Bits: 4294967295
   triggerInteraction: 1
+  allowFriendlyFire: 0
   magazineCapacity: 32
   startingReserve: 128
   reloadDuration: 2.4
@@ -26617,6 +26824,7 @@ MonoBehaviour:
   tracerColor: {r: 1, g: 0.8, b: 0.25, a: 1}
   tracerWidth: 0.025
   tracerLifetime: 0.06
+  tracerPoolSize: 8
 --- !u!82 &856944977
 AudioSource:
   m_ObjectHideFlags: 0
@@ -35558,8 +35766,6 @@ Transform:
   - {fileID: 328622299}
   - {fileID: 2109537526}
   - {fileID: 1823395619}
-  - {fileID: 1519129552}
-  - {fileID: 1120259742}
   m_Father: {fileID: 702163324}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1001 &1084405196
@@ -36481,7 +36687,7 @@ GameObject:
   - component: {fileID: 1120259744}
   - component: {fileID: 1120259743}
   m_Layer: 0
-  m_Name: "\u0424\u043B\u044F\u0433\u0430 (\u0432 \u043F\u043E\u0434\u0432\u0430\u043B\u0435)"
+  m_Name: "\u0424\u043B\u044F\u0433\u0430"
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -36495,12 +36701,12 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1120259741}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -0.4, y: 0.05, z: 0.3}
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: 6.5615234, y: 37.260487, z: 47.423096}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 1083860419}
+  m_Father: {fileID: 1397494078}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!114 &1120259743
 MonoBehaviour:
@@ -37680,15 +37886,21 @@ MonoBehaviour:
   fieldOfView: 110
   verticalViewTolerance: 6
   closeDetectDistance: 7
+  instantDetectDistance: 15
   perceptionInterval: 0.15
+  perceptionTickJitter: 0.15
   targetMemoryDuration: 8
   hearingRadiusMultiplier: 1.5
+  maxHearingDistance: 140
+  hearingPositionErrorRatio: 0.08
   hearingSensitivity: 1.3
   hearingThreshold: 0.06
   timeToDetect: 0.9
   awarenessDecay: 0.35
   reactionTime: 0.55
   patrolSpeed: 1.8
+  alertSpeed: 2.2
+  sprintSpeedMultiplier: 1.25
   pointWaitDuration: 2
   pointReachRadius: 0.6
   wanderWhenNoRoute: 1
@@ -37703,7 +37915,6 @@ MonoBehaviour:
   lookAroundHoldMin: 0.6
   lookAroundHoldMax: 1.2
   chaseSpeed: 2.8
-  combatApproachSpeed: 1.6
   preferredCombatDistance: 20
   maximumCombatDistance: 38
   useSquadTactics: 1
@@ -37719,7 +37930,33 @@ MonoBehaviour:
   squadSeparationDistance: 4.5
   squadSeparationStrength: 0.8
   combatAnchorTolerance: 1.2
+  combatRangeSlack: 5
   combatAnchorTrackSpeed: 1.5
+  maxShooters: 3
+  squadCommitTime: 1.5
+  maneuverDistance: 10
+  tacticMinTargetDistance: 6
+  woundedHealthThreshold: 0.35
+  woundedFireRateScale: 1.8
+  coverPeekDuration: 1.6
+  coverHideDuration: 1.8
+  tacticalMinimumBurst: 3
+  tacticalMaximumBurst: 8
+  tacticalMinimumPause: 0.4
+  tacticalMaximumPause: 1.2
+  spreadUnseenMultiplier: 2
+  spreadSeenMultiplier: 0.8
+  spreadSettleTime: 3
+  suddenTargetReactionDelay: 0.3
+  chaseLeadTime: 1.2
+  chaseLeadMaxDistance: 6
+  contactShareDelay: {x: 0.3, y: 1}
+  contactShareDelayScale: 0.25
+  contactAlertRadius: 45
+  radioInterval: 1.2
+  allyGunshotRadius: 120
+  allyNoiseMinRadius: 12
+  searchPointCount: 3
   openingDuration: 4
   openingSpread: 0.55
   midFightSpread: 1.25
@@ -37733,6 +37970,7 @@ MonoBehaviour:
   - 1.2
   pacingDamageJitter: 0.15
   combatLoseSightGrace: 0.4
+  engageResetDelay: 10
   combatTurnSpeed: 115
   jitterReaction: 1
   burstClimb: 0.35
@@ -37750,11 +37988,12 @@ MonoBehaviour:
   movingSpreadMultiplier: 2.2
   suppressedSpreadMultiplier: 3
   leadAccuracy: 0.6
-  maxFireAngle: 8
+  maxFireAngle: 20
   suppressionDecay: 0.6
   pathRefreshInterval: 0.25
   corpseLifetime: 5
   debugLogging: 0
+  debugOverlay: 0
 --- !u!114 &1175762490
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -37876,7 +38115,14 @@ MonoBehaviour:
   turnSpeed: 100
   speedAcceleration: 3.5
   speedDeceleration: 6
+  sprintAcceleration: 12
+  sprintDeceleration: 16
   arriveDamping: 0.75
+  validatePath: 1
+  maxPathLengthRatio: 2.5
+  agentAccelerationOverride: 60
+  disableAgentAutoBraking: 1
+  agentRadius: 0.4
   allowFallbackMovement: 1
   navMeshRecheckInterval: 1
   navMeshSnapRadius: 3
@@ -37997,6 +38243,12 @@ MonoBehaviour:
   walkClip: {fileID: 7400000, guid: 6ed2cbee4c1fa7f4aaa102a7346f7fce, type: 2}
   runClip: {fileID: 7400000, guid: e00a96682e88d6c478b83717c08bf4f7, type: 2}
   sprintClip: {fileID: 7400000, guid: e00a96682e88d6c478b83717c08bf4f7, type: 2}
+  strafeLeftClip: {fileID: 0}
+  strafeRightClip: {fileID: 0}
+  walkBackClip: {fileID: 0}
+  aimIdleClip: {fileID: 0}
+  aimWalkClip: {fileID: 0}
+  upperBodyMask: {fileID: 0}
   walkAnchorSpeed: 1.8
   runAnchorSpeed: 2.8
   sprintAnchorSpeed: 3.2
@@ -38005,6 +38257,7 @@ MonoBehaviour:
   freezeInPlaceWithoutIdle: 1
   lockScales: 1
   shootClip: {fileID: 0}
+  shootRecoilClip: {fileID: 0}
   reloadClip: {fileID: 0}
   hitClip: {fileID: 0}
   deathClips:
@@ -41287,6 +41540,7 @@ MonoBehaviour:
     serializedVersion: 2
     m_Bits: 4294967295
   triggerInteraction: 1
+  allowFriendlyFire: 0
   magazineCapacity: 32
   startingReserve: 128
   reloadDuration: 2.4
@@ -41297,6 +41551,7 @@ MonoBehaviour:
   tracerColor: {r: 1, g: 0.8, b: 0.25, a: 1}
   tracerWidth: 0.025
   tracerLifetime: 0.06
+  tracerPoolSize: 8
 --- !u!82 &1304023875
 AudioSource:
   m_ObjectHideFlags: 0
@@ -42758,6 +43013,41 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 1, y: 4.241867, z: 12.474299}
   m_Center: {x: 0.000022000937, y: 2.8133447, z: 6.9790993}
+--- !u!1 &1397494077
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1397494078}
+  m_Layer: 0
+  m_Name: Q2items
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1397494078
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1397494077}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 786.0784, y: -30.459486, z: 500.387}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children:
+  - {fileID: 1519129552}
+  - {fileID: 1120259742}
+  - {fileID: 535767113}
+  - {fileID: 1775916400}
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1398806679
 GameObject:
   m_ObjectHideFlags: 0
@@ -47292,7 +47582,7 @@ GameObject:
   - component: {fileID: 1519129554}
   - component: {fileID: 1519129553}
   m_Layer: 0
-  m_Name: "\u0425\u043B\u0435\u0431 (\u0432 \u043F\u043E\u0434\u0432\u0430\u043B\u0435)"
+  m_Name: "\u0425\u043B\u0435\u0431"
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -47306,12 +47596,12 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1519129551}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0.4, y: 0.05, z: 0.3}
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: 7.3615723, y: 37.260487, z: 47.423096}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 1083860419}
+  m_Father: {fileID: 1397494078}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!114 &1519129553
 MonoBehaviour:
@@ -51584,15 +51874,21 @@ MonoBehaviour:
   fieldOfView: 110
   verticalViewTolerance: 6
   closeDetectDistance: 7
+  instantDetectDistance: 15
   perceptionInterval: 0.15
+  perceptionTickJitter: 0.15
   targetMemoryDuration: 8
   hearingRadiusMultiplier: 1.5
+  maxHearingDistance: 140
+  hearingPositionErrorRatio: 0.08
   hearingSensitivity: 1.3
   hearingThreshold: 0.06
   timeToDetect: 0.9
   awarenessDecay: 0.35
   reactionTime: 0.55
   patrolSpeed: 1.8
+  alertSpeed: 2.2
+  sprintSpeedMultiplier: 1.25
   pointWaitDuration: 2
   pointReachRadius: 0.6
   wanderWhenNoRoute: 1
@@ -51607,7 +51903,6 @@ MonoBehaviour:
   lookAroundHoldMin: 0.6
   lookAroundHoldMax: 1.2
   chaseSpeed: 2.8
-  combatApproachSpeed: 1.6
   preferredCombatDistance: 20
   maximumCombatDistance: 38
   useSquadTactics: 1
@@ -51623,7 +51918,33 @@ MonoBehaviour:
   squadSeparationDistance: 4.5
   squadSeparationStrength: 0.8
   combatAnchorTolerance: 1.2
+  combatRangeSlack: 5
   combatAnchorTrackSpeed: 1.5
+  maxShooters: 3
+  squadCommitTime: 1.5
+  maneuverDistance: 10
+  tacticMinTargetDistance: 6
+  woundedHealthThreshold: 0.35
+  woundedFireRateScale: 1.8
+  coverPeekDuration: 1.6
+  coverHideDuration: 1.8
+  tacticalMinimumBurst: 3
+  tacticalMaximumBurst: 8
+  tacticalMinimumPause: 0.4
+  tacticalMaximumPause: 1.2
+  spreadUnseenMultiplier: 2
+  spreadSeenMultiplier: 0.8
+  spreadSettleTime: 3
+  suddenTargetReactionDelay: 0.3
+  chaseLeadTime: 1.2
+  chaseLeadMaxDistance: 6
+  contactShareDelay: {x: 0.3, y: 1}
+  contactShareDelayScale: 0.25
+  contactAlertRadius: 45
+  radioInterval: 1.2
+  allyGunshotRadius: 120
+  allyNoiseMinRadius: 12
+  searchPointCount: 3
   openingDuration: 4
   openingSpread: 0.55
   midFightSpread: 1.25
@@ -51637,6 +51958,7 @@ MonoBehaviour:
   - 1.2
   pacingDamageJitter: 0.15
   combatLoseSightGrace: 0.4
+  engageResetDelay: 10
   combatTurnSpeed: 115
   jitterReaction: 1
   burstClimb: 0.35
@@ -51654,11 +51976,12 @@ MonoBehaviour:
   movingSpreadMultiplier: 2.2
   suppressedSpreadMultiplier: 3
   leadAccuracy: 0.6
-  maxFireAngle: 8
+  maxFireAngle: 20
   suppressionDecay: 0.6
   pathRefreshInterval: 0.25
   corpseLifetime: 6
   debugLogging: 0
+  debugOverlay: 0
 --- !u!114 &1623937728
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -51781,7 +52104,14 @@ MonoBehaviour:
   turnSpeed: 100
   speedAcceleration: 3.5
   speedDeceleration: 6
+  sprintAcceleration: 12
+  sprintDeceleration: 16
   arriveDamping: 0.75
+  validatePath: 1
+  maxPathLengthRatio: 2.5
+  agentAccelerationOverride: 60
+  disableAgentAutoBraking: 1
+  agentRadius: 0.4
   allowFallbackMovement: 1
   navMeshRecheckInterval: 1
   navMeshSnapRadius: 3
@@ -51902,6 +52232,12 @@ MonoBehaviour:
   walkClip: {fileID: 7400000, guid: 6ed2cbee4c1fa7f4aaa102a7346f7fce, type: 2}
   runClip: {fileID: 7400000, guid: e00a96682e88d6c478b83717c08bf4f7, type: 2}
   sprintClip: {fileID: 7400000, guid: e00a96682e88d6c478b83717c08bf4f7, type: 2}
+  strafeLeftClip: {fileID: 0}
+  strafeRightClip: {fileID: 0}
+  walkBackClip: {fileID: 0}
+  aimIdleClip: {fileID: 0}
+  aimWalkClip: {fileID: 0}
+  upperBodyMask: {fileID: 0}
   walkAnchorSpeed: 1.8
   runAnchorSpeed: 2.8
   sprintAnchorSpeed: 3.2
@@ -51910,6 +52246,7 @@ MonoBehaviour:
   freezeInPlaceWithoutIdle: 1
   lockScales: 1
   shootClip: {fileID: 0}
+  shootRecoilClip: {fileID: 0}
   reloadClip: {fileID: 0}
   hitClip: {fileID: 0}
   deathClips:
@@ -59198,6 +59535,111 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 7.5904365, y: 0.7801193, z: 0.77737665}
   m_Center: {x: -0.4255994, y: 0.022274477, z: -0.21042322}
+--- !u!1 &1775916399
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1775916400}
+  - component: {fileID: 1775916403}
+  - component: {fileID: 1775916402}
+  - component: {fileID: 1775916401}
+  m_Layer: 0
+  m_Name: Cube
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1775916400
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1775916399}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 7.365, y: 37.189, z: 47.418}
+  m_LocalScale: {x: 0.41674, y: 0.41674, z: 0.41674}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1397494078}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!65 &1775916401
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1775916399}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 1, y: 1, z: 1}
+  m_Center: {x: 0, y: 0, z: 0}
+--- !u!23 &1775916402
+MeshRenderer:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1775916399}
+  m_Enabled: 1
+  m_CastShadows: 1
+  m_ReceiveShadows: 1
+  m_DynamicOccludee: 1
+  m_StaticShadowCaster: 0
+  m_MotionVectors: 1
+  m_LightProbeUsage: 1
+  m_ReflectionProbeUsage: 1
+  m_RayTracingMode: 2
+  m_RayTraceProcedural: 0
+  m_RenderingLayerMask: 1
+  m_RendererPriority: 0
+  m_Materials:
+  - {fileID: 2100000, guid: 31321ba15b8f8eb4c954353edc038b1d, type: 2}
+  m_StaticBatchInfo:
+    firstSubMesh: 0
+    subMeshCount: 0
+  m_StaticBatchRoot: {fileID: 0}
+  m_ProbeAnchor: {fileID: 0}
+  m_LightProbeVolumeOverride: {fileID: 0}
+  m_ScaleInLightmap: 1
+  m_ReceiveGI: 1
+  m_PreserveUVs: 0
+  m_IgnoreNormalsForChartDetection: 0
+  m_ImportantGI: 0
+  m_StitchLightmapSeams: 1
+  m_SelectedEditorRenderState: 3
+  m_MinimumChartSize: 4
+  m_AutoUVMaxDistance: 0.5
+  m_AutoUVMaxAngle: 89
+  m_LightmapParameters: {fileID: 0}
+  m_SortingLayerID: 0
+  m_SortingLayer: 0
+  m_SortingOrder: 0
+  m_AdditionalVertexStreams: {fileID: 0}
+--- !u!33 &1775916403
+MeshFilter:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1775916399}
+  m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
 --- !u!1001 &1777253137
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -63948,15 +64390,21 @@ MonoBehaviour:
   fieldOfView: 110
   verticalViewTolerance: 6
   closeDetectDistance: 7
+  instantDetectDistance: 15
   perceptionInterval: 0.15
+  perceptionTickJitter: 0.15
   targetMemoryDuration: 8
   hearingRadiusMultiplier: 1.5
+  maxHearingDistance: 140
+  hearingPositionErrorRatio: 0.08
   hearingSensitivity: 1.3
   hearingThreshold: 0.06
   timeToDetect: 0.9
   awarenessDecay: 0.35
   reactionTime: 0.55
   patrolSpeed: 1.8
+  alertSpeed: 2.2
+  sprintSpeedMultiplier: 1.25
   pointWaitDuration: 2
   pointReachRadius: 0.6
   wanderWhenNoRoute: 1
@@ -63971,7 +64419,6 @@ MonoBehaviour:
   lookAroundHoldMin: 0.6
   lookAroundHoldMax: 1.2
   chaseSpeed: 2.8
-  combatApproachSpeed: 1.6
   preferredCombatDistance: 20
   maximumCombatDistance: 38
   useSquadTactics: 1
@@ -63987,7 +64434,33 @@ MonoBehaviour:
   squadSeparationDistance: 4.5
   squadSeparationStrength: 0.8
   combatAnchorTolerance: 1.2
+  combatRangeSlack: 5
   combatAnchorTrackSpeed: 1.5
+  maxShooters: 3
+  squadCommitTime: 1.5
+  maneuverDistance: 10
+  tacticMinTargetDistance: 6
+  woundedHealthThreshold: 0.35
+  woundedFireRateScale: 1.8
+  coverPeekDuration: 1.6
+  coverHideDuration: 1.8
+  tacticalMinimumBurst: 3
+  tacticalMaximumBurst: 8
+  tacticalMinimumPause: 0.4
+  tacticalMaximumPause: 1.2
+  spreadUnseenMultiplier: 2
+  spreadSeenMultiplier: 0.8
+  spreadSettleTime: 3
+  suddenTargetReactionDelay: 0.3
+  chaseLeadTime: 1.2
+  chaseLeadMaxDistance: 6
+  contactShareDelay: {x: 0.3, y: 1}
+  contactShareDelayScale: 0.25
+  contactAlertRadius: 45
+  radioInterval: 1.2
+  allyGunshotRadius: 120
+  allyNoiseMinRadius: 12
+  searchPointCount: 3
   openingDuration: 4
   openingSpread: 0.55
   midFightSpread: 1.25
@@ -64001,6 +64474,7 @@ MonoBehaviour:
   - 1.2
   pacingDamageJitter: 0.15
   combatLoseSightGrace: 0.4
+  engageResetDelay: 10
   combatTurnSpeed: 115
   jitterReaction: 1
   burstClimb: 0.35
@@ -64018,11 +64492,12 @@ MonoBehaviour:
   movingSpreadMultiplier: 2.2
   suppressedSpreadMultiplier: 3
   leadAccuracy: 0.6
-  maxFireAngle: 8
+  maxFireAngle: 20
   suppressionDecay: 0.6
   pathRefreshInterval: 0.25
   corpseLifetime: 5
   debugLogging: 0
+  debugOverlay: 0
 --- !u!65 &1903919460
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -64165,7 +64640,14 @@ MonoBehaviour:
   turnSpeed: 100
   speedAcceleration: 3.5
   speedDeceleration: 6
+  sprintAcceleration: 12
+  sprintDeceleration: 16
   arriveDamping: 0.75
+  validatePath: 1
+  maxPathLengthRatio: 2.5
+  agentAccelerationOverride: 60
+  disableAgentAutoBraking: 1
+  agentRadius: 0.4
   allowFallbackMovement: 1
   navMeshRecheckInterval: 1
   navMeshSnapRadius: 3
@@ -64286,6 +64768,12 @@ MonoBehaviour:
   walkClip: {fileID: 7400000, guid: 6ed2cbee4c1fa7f4aaa102a7346f7fce, type: 2}
   runClip: {fileID: 7400000, guid: e00a96682e88d6c478b83717c08bf4f7, type: 2}
   sprintClip: {fileID: 7400000, guid: e00a96682e88d6c478b83717c08bf4f7, type: 2}
+  strafeLeftClip: {fileID: 0}
+  strafeRightClip: {fileID: 0}
+  walkBackClip: {fileID: 0}
+  aimIdleClip: {fileID: 0}
+  aimWalkClip: {fileID: 0}
+  upperBodyMask: {fileID: 0}
   walkAnchorSpeed: 1.8
   runAnchorSpeed: 2.8
   sprintAnchorSpeed: 3.2
@@ -64294,6 +64782,7 @@ MonoBehaviour:
   freezeInPlaceWithoutIdle: 1
   lockScales: 1
   shootClip: {fileID: 0}
+  shootRecoilClip: {fileID: 0}
   reloadClip: {fileID: 0}
   hitClip: {fileID: 0}
   deathClips:
@@ -72828,3 +73317,4 @@ SceneRoots:
   - {fileID: 705000657}
   - {fileID: 789273436}
   - {fileID: 720241240}
+  - {fileID: 1397494078}

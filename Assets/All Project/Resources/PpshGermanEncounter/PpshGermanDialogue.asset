@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: PpshGermanDialogue
   m_EditorClassIdentifier:
   dialogueName: "ППШ — немец за дверью"
-  description: "После подбора ППШ за дверью стучит немец. Просит хлеб и воду. Согласие — уходит, отказ — свист и шестеро из засады."
+  description: "После подбора ППШ за дверью стучит немец из налёта: требует побор — хлеб, воду, табак. Согласие — уходит, отказ — свист и шестеро из засады."
   completionQuestId:
   nodes:
   - nodeID: N1
@@ -21,7 +21,7 @@ MonoBehaviour:
     speakerName: "Немец"
     speakerPortrait: {fileID: 0}
     speakerColor: {r: 0, g: 0, b: 0, a: 0}
-    dialogueText: "Halt! Не стреляйте! Штоп... не шумите! Ich bin allein. Я один, один. Слышите?"
+    dialogueText: "Halt! Nicht schießen! Tür auf — открывай. Brot, Wasser, Tabak — всё сюда, и быстро. Мы уже в селе, Soldat: второй раз я стучать не буду."
     voiceClip: {fileID: 0}
     germanAccent: 1
     textSpeed: 0
@@ -39,7 +39,7 @@ MonoBehaviour:
     speakerName: "Алесь"
     speakerPortrait: {fileID: 0}
     speakerColor: {r: 0, g: 0, b: 0, a: 0}
-    dialogueText: "Стой. Не подходи. Кто ты и как ты сюда попал?"
+    dialogueText: "Стой. Не подходи. Кто ты такой и почему я должен тебе что-то давать?"
     voiceClip: {fileID: 0}
     germanAccent: 0
     textSpeed: 0
@@ -57,7 +57,7 @@ MonoBehaviour:
     speakerName: "Немец"
     speakerPortrait: {fileID: 0}
     speakerColor: {r: 0, g: 0, b: 0, a: 0}
-    dialogueText: "Я... Ганс. Рядовой, Ганс. Мой взвод разбили у шоссе, третий день назад. Ich habe Hunger — я голоден. Дай Brot, bitte, и Wasser, bitte. Только хлеб и воду."
+    dialogueText: "Ich bin Hans — рядовой. Взвод разбили у шоссе, теперь я собираю побор по деревне. Не отдашь по-хорошему — заберу сам. Brot, Wasser und Tabak — и я уйду."
     voiceClip: {fileID: 0}
     germanAccent: 1
     textSpeed: 0
@@ -75,7 +75,7 @@ MonoBehaviour:
     speakerName: "Немец"
     speakerPortrait: {fileID: 0}
     speakerColor: {r: 0, g: 0, b: 0, a: 0}
-    dialogueText: "И Tabak, если есть. И Streichholz — спички. Немец в плену, я не маньяк, я просто солдат, который забыл дорогу. Ну? Что скажешь, Soldat?"
+    dialogueText: "Ну? Schnell, Soldat: у меня ещё полдеревни впереди."
     voiceClip: {fileID: 0}
     germanAccent: 1
     textSpeed: 0
@@ -141,7 +141,7 @@ MonoBehaviour:
       onSelected:
         m_PersistentCalls:
           m_Calls: []
-    - choiceText: "У меня пусто. Убирайся."
+    - choiceText: "Ничего ты здесь не получишь. Убирайся!"
       condition: {fileID: 0}
       requiredItemId:
       requiredItemCount: 1
@@ -150,6 +150,29 @@ MonoBehaviour:
       requiredQuestState: 1
       showWhenLocked: 0
       nextNodeID: N5_refuse
+      endDialogue: 0
+      onSelectCommands:
+      - type: 10
+        stringParam: ppsh_german_refused
+        stringValueParam:
+        boolParam: 0
+        intParam: 0
+        floatParam: 0
+        gameObjectParam: {fileID: 0}
+        clipParam: {fileID: 0}
+        spriteParam: {fileID: 0}
+      onSelected:
+        m_PersistentCalls:
+          m_Calls: []
+    - choiceText: "Ещё шаг — и я выстрелю!"
+      condition: {fileID: 0}
+      requiredItemId:
+      requiredItemCount: 1
+      requiredItems: []
+      requiredQuestId:
+      requiredQuestState: 1
+      showWhenLocked: 0
+      nextNodeID: N5_fight
       endDialogue: 0
       onSelectCommands:
       - type: 10
@@ -175,7 +198,7 @@ MonoBehaviour:
     speakerName: "Немец"
     speakerPortrait: {fileID: 0}
     speakerColor: {r: 0, g: 0, b: 0, a: 0}
-    dialogueText: "В лесу... за огородами, у берёзы. Они ждут. Я к ним не пойду. Ich will nach Hause — я домой хочу. Ты понимаешь, Soldat?"
+    dialogueText: "За огородами, у берёзы. Sechs Mann — шестеро. Пока мы говорим, они уже вскрыли первую избу. Так что не тяни, Soldat: они не ждут."
     voiceClip: {fileID: 0}
     germanAccent: 1
     textSpeed: 0
@@ -193,7 +216,7 @@ MonoBehaviour:
     speakerName: "Немец"
     speakerPortrait: {fileID: 0}
     speakerColor: {r: 0, g: 0, b: 0, a: 0}
-    dialogueText: "Danke... Спасибо, Soldat. Du bist ein guter Mensch. Я ухожу. Меня здесь не было. Не ищи меня."
+    dialogueText: "Gut. Хлеб и воду забираю. Не шуми и дверь больше не открывай. Мы ещё проверим остальные дома. Auf Wiedersehen."
     voiceClip: {fileID: 0}
     germanAccent: 1
     textSpeed: 0
@@ -211,7 +234,25 @@ MonoBehaviour:
     speakerName: "Немец"
     speakerPortrait: {fileID: 0}
     speakerColor: {r: 0, g: 0, b: 0, a: 0}
-    dialogueText: "Пожалеешь... Нас шесть, Soldat. Мы уже здесь. Hören Sie? Слышишь?"
+    dialogueText: "Wie bitte? Ты отказываешься выполнять приказ? Хорошо. Kameraden! Сюда! В этом доме сопротивление! Сейчас сами всё заберём!"
+    voiceClip: {fileID: 0}
+    germanAccent: 1
+    textSpeed: 0
+    autoAdvanceDelay: 0
+    onEnterCommands: []
+    choices: []
+    onNodeEnter:
+      m_PersistentCalls:
+        m_Calls: []
+    onNodeExit:
+      m_PersistentCalls:
+        m_Calls: []
+  - nodeID: N5_fight
+    nextNodeID: ""
+    speakerName: "Немец"
+    speakerPortrait: {fileID: 0}
+    speakerColor: {r: 0, g: 0, b: 0, a: 0}
+    dialogueText: "Du willst kämpfen? Сам напросился! Kameraden, сюда! Schnell! К двери, живо! Feuer!"
     voiceClip: {fileID: 0}
     germanAccent: 1
     textSpeed: 0

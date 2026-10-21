@@ -39,6 +39,9 @@ public static class ProjectilePass
     }
     public static event Action<Shot> ShotFired;
 
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    private static void ResetStatics() => ShotFired = null;
+
     public static void Emit(Shot shot) => ShotFired?.Invoke(shot);
 }
 }

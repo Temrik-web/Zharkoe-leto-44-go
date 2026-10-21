@@ -41,12 +41,24 @@ namespace ZharkoeLeto44.AI
         [Tooltip("В упор враг замечает движение/звук даже вне конуса зрения " +
                  "(периферия, шорох). Внутри этого радиуса FOV игнорируется.")]
         [SerializeField, Min(0f)] private float closeDetectDistance = 7f;
+        [Tooltip("Ближе этой дистанции (м) цель с чистой линией зрения обнаруживается " +
+                 "почти мгновенно, без накопления awareness.")]
+        [SerializeField, Min(0f)] private float instantDetectDistance = 15f;
         [SerializeField, Min(0.02f)] private float perceptionInterval = 0.15f;
+        [Tooltip("Разброс тиков восприятия между солдатами, сек. Солдаты «смотрят в мир» " +
+                 "вразнобой — нагрузка на физику распределена по кадрам, а не бьёт в один.")]
+        [SerializeField, Min(0f)] private float perceptionTickJitter = 0.15f;
         [SerializeField, Min(0f)] private float targetMemoryDuration = 8f;
 
         [Header("Слух")]
         [Tooltip("Множитель радиуса слышимости для всех шумов: выстрелы, крики, шаги, удары.")]
         [SerializeField, Min(1f)] private float hearingRadiusMultiplier = 1.5f;
+        [Tooltip("ВЕРХНЯЯ ГРАНИЦА слышимости, м. Даже очень громкий шум (выстрел) не " +
+                 "поднимет весь уровень: радиус слышимости не превысит это значение.")]
+        [SerializeField, Min(1f)] private float maxHearingDistance = 140f;
+        [Tooltip("Ошибка позиции услышанного шума, доля от дистанции. Враг идёт в РАЙОН " +
+                 "шума, а не точно в точку: 0.08 = на 100 м промах до 8 м.")]
+        [SerializeField, Range(0f, 0.5f)] private float hearingPositionErrorRatio = 0.08f;
         [Tooltip("Множитель громкости услышанного шума.")]
         [SerializeField, Min(0.1f)] private float hearingSensitivity = 1.3f;
         [Tooltip("Минимальная слышимая громкость (0–1). Ниже этого шум игнорируется.")]
@@ -59,6 +71,11 @@ namespace ZharkoeLeto44.AI
 
         [Header("Patrol")]
         [SerializeField, Min(0f)] private float patrolSpeed = 1.6f;
+        [Tooltip("Скорость настороженного шага (jog), м/с. Отдельная от патруля и погони: " +
+                 "раньше «смесь» walk+run в одной скорости (chaseSpeed×0.8) ломала якоря анимации.")]
+        [SerializeField, Min(0f)] private float alertSpeed = 2.2f;
+        [Tooltip("Множитель скорости перебежки (спринта) от Chase Speed, м/с.")]
+        [SerializeField, Min(1f)] private float sprintSpeedMultiplier = 1.25f;
         [SerializeField, Min(0f)] private float pointWaitDuration = 2f;
         [SerializeField, Min(0.1f)] private float pointReachRadius = 0.6f;
         [Tooltip("Если маршрут не задан — враг сам бродит по округе, а не стоит на месте.")]
@@ -86,9 +103,6 @@ namespace ZharkoeLeto44.AI
         [Tooltip("Скорость погони, м/с. Держим низкой: солдат подходит к цели, а не " +
                  "мчится через карту (было 10 — выглядело как рывок).")]
         [SerializeField, Min(0f)] private float chaseSpeed = 2.8f;
-        [Tooltip("Скорость сближения в бою, м/с. Медленно и плавно: подошёл на метр — " +
-                 "остановился, без рывков туда-сюда.")]
-        [SerializeField, Min(0f)] private float combatApproachSpeed = 1.6f;
         [Tooltip("Дистанция боя, м: дальше — подходит на скорости погони, " +
                  "на дистанции — стоит и стреляет. Назад/вбок в бою не уходит.")]
         [SerializeField, Min(1f)] private float preferredCombatDistance = 7f;
@@ -110,8 +124,11 @@ namespace ZharkoeLeto44.AI
         [SerializeField, Min(5f)] private float squadPursuitDistance = 33f;
         [Tooltip("Сколько стоять после начала стрельбы, прежде чем менять позицию. Сек.")]
         [SerializeField, Min(0f)] private float squadFireAnchorDuration = 1.2f;
-        [Tooltip("Множитель скорости осторожного преследования.")]
+        [Tooltip("Множитель скорости осторожного преследования. Не используется: скорости " +
+                 "разделены явно (патруль / настороженный шаг / погоня / перебежка).")]
+#pragma warning disable 0414 // поле оставлено ради сохранённых в сценах значений
         [SerializeField, Range(0.5f, 1f)] private float squadPursuitSpeedScale = 0.8f;
+#pragma warning restore 0414
 
         [Header("Рассредоточение (строй и разброс по местности)")]
         [Tooltip("Ширина строя, м: насколько солдаты расходятся вбок друг от друга. " +
@@ -125,8 +142,77 @@ namespace ZharkoeLeto44.AI
         [SerializeField, Range(0f, 1f)] private float squadSeparationStrength = 0.8f;
         [Tooltip("Насколько солдат может отойти от своей точки и считать, что он на месте, м.")]
         [SerializeField, Min(0.1f)] private float combatAnchorTolerance = 1.2f;
+        [Tooltip("Допуск до боевой дистанции, м. Видимая цель ближе этого — солдат " +
+                 "стоит и стреляет, а не идёт бесконечно вперёд.")]
+        [SerializeField, Min(0f)] private float combatRangeSlack = 5f;
         [Tooltip("Скорость, с которой своя точка догоняет цель, м/с. Медленная — без рывков.")]
         [SerializeField, Min(0.1f)] private float combatAnchorTrackSpeed = 1.5f;
+
+        [Header("Тактика отряда (огонь и манёвр)")]
+        [Tooltip("Максимум солдат, стреляющих одновременно (жетоны атаки). " +
+                 "Реальный лимит = min(это значение, ceil(отряд/2)).")]
+        [SerializeField, Min(1)] private int maxShooters = 3;
+        [Tooltip("Время фиксации решения отряда, сек. Решение не дрожит: смена ролей " +
+                 "и жетонов — не чаще раза в это время.")]
+        [SerializeField, Min(0.1f)] private float squadCommitTime = 1.5f;
+        [Tooltip("Длительность перебежки для роли «Манёвр», м (8–12).")]
+        [SerializeField, Min(2f)] private float maneuverDistance = 10f;
+        [Tooltip("Не подходить к игроку ближе этого расстояния, м.")]
+        [SerializeField, Min(0f)] private float tacticMinTargetDistance = 6f;
+        [Tooltip("Доля здоровья, ниже которой солдат считается раненым и стреляет реже.")]
+        [SerializeField, Range(0f, 1f)] private float woundedHealthThreshold = 0.35f;
+        [Tooltip("Множитель паузы между очередями для раненого (стреляет реже).")]
+        [SerializeField, Min(1f)] private float woundedFireRateScale = 1.8f;
+        [Tooltip("Сколько секунд солдат «выглядывает» из укрытия.")]
+        [SerializeField, Min(0.1f)] private float coverPeekDuration = 1.6f;
+        [Tooltip("Сколько секунд солдат прячется в укрытии.")]
+        [SerializeField, Min(0.1f)] private float coverHideDuration = 1.8f;
+
+        [Header("Очереди в тактическом режиме")]
+        [Tooltip("Минимум патронов в очереди (используется при Use Squad Tactics = вкл).")]
+        [SerializeField, Range(1, 16)] private int tacticalMinimumBurst = 3;
+        [Tooltip("Максимум патронов в очереди (используется при Use Squad Tactics = вкл).")]
+        [SerializeField, Range(1, 16)] private int tacticalMaximumBurst = 8;
+        [Tooltip("Минимальная пауза между очередями в тактическом режиме, сек.")]
+        [SerializeField, Min(0f)] private float tacticalMinimumPause = 0.4f;
+        [Tooltip("Максимальная пауза между очередями в тактическом режиме, сек.")]
+        [SerializeField, Min(0f)] private float tacticalMaximumPause = 1.2f;
+
+        [Header("Точность (растёт при непрерывной видимости)")]
+        [Tooltip("Множитель разброса сразу после обнаружения цели (2 = вдвое шире базы).")]
+        [SerializeField, Min(0.1f)] private float spreadUnseenMultiplier = 2f;
+        [Tooltip("Множитель разброса после нескольких секунд непрерывной видимости.")]
+        [SerializeField, Min(0.1f)] private float spreadSeenMultiplier = 0.8f;
+        [Tooltip("За сколько секунд непрерывной видимости точность доходит до нормы, сек.")]
+        [SerializeField, Min(0.1f)] private float spreadSettleTime = 3f;
+
+        [Header("Sprint")]
+        [Tooltip("Задержка реакции на «внезапную» цель (появилась из-за угла), сек. " +
+                 "Для цели, замеченной давно, реакция обычная (Reaction Time).")]
+        [SerializeField, Min(0f)] private float suddenTargetReactionDelay = 0.3f;
+        [Tooltip("На сколько секунд вперёд просчитывается уход цели в погоне, сек.")]
+        [SerializeField, Min(0f)] private float chaseLeadTime = 1.2f;
+        [Tooltip("Максимальный упреждение по уходу цели, м.")]
+        [SerializeField, Min(0f)] private float chaseLeadMaxDistance = 6f;
+        [Tooltip("Задержка передачи контакта союзникам, сек. (мин/макс).")]
+        [SerializeField] private Vector2 contactShareDelay = new(0.3f, 1f);
+        [Tooltip("Множитель задержки передачи контакта: 1 — как настроено, " +
+                 "0.3 — отряд подтягивается почти сразу.")]
+        [SerializeField, Range(0.05f, 1f)] private float contactShareDelayScale = 0.25f;
+        [Tooltip("Радиус тревоги вокруг заметившего, м. Слышат все, кто в этом " +
+                 "радиусе, — они сразу бегут на игрока.")]
+        [SerializeField, Min(5f)] private float contactAlertRadius = 80f;
+        [Tooltip("Как часто стреляющий солдат сообщает отряду, где цель, сек. " +
+                 "0 — только при входе в бой.")]
+        [SerializeField, Min(0f)] private float radioInterval = 1.2f;
+        [Tooltip("Радиус, в котором слышны выстрелы союзника, м. Услышали стрельбу " +
+                 "своего — идём на неё, даже если бой не видно.")]
+        [SerializeField, Min(5f)] private float allyGunshotRadius = 120f;
+        [Tooltip("Минимальный радиум шума союзника, на который реагируем. " +
+                 "Ниже — шаги и попадания (на них не бегут).")]
+        [SerializeField, Min(1f)] private float allyNoiseMinRadius = 12f;
+        [Tooltip("Сколько точек проверяет солдат при поиске (2–3).")]
+        [SerializeField, Range(2, 3)] private int searchPointCount = 3;
 
         [Header("Fight pacing (темп схватки, как в топ-играх)")]
         [Tooltip("Первые секунды схватки враг бьёт кучнее (был наготове): " +
@@ -148,6 +234,9 @@ namespace ZharkoeLeto44.AI
         [Tooltip("Сколько держать бой при кратковременной помехе (рывки луча " +
                  "из-за углов/косяков), прежде чем сорваться в погоню. Сек.")]
         [SerializeField, Min(0f)] private float combatLoseSightGrace = 0.4f;
+        [Tooltip("Через сколько секунд вне боя темп схватки сбрасывается: новая схватка " +
+                 "снова начинается с «царапины». Сек.")]
+        [SerializeField, Min(0f)] private float engageResetDelay = 10f;
 
         [Header("Humanity (человечность)")]
         [Tooltip("Скорость доводки корпуса в бою, град/сек. Человек доворачивается " +
@@ -184,7 +273,7 @@ namespace ZharkoeLeto44.AI
         [Tooltip("Не стрелять, пока корпус не довернулся на цель (допуск, град, только " +
                   "рыскание). Иначе очередь уходит визуально вбок от неразвёрнутого ствола. " +
                   "Огонь только когда развернулся на игрока.")]
-        [SerializeField, Range(0f, 45f)] private float maxFireAngle = 8f;
+        [SerializeField, Range(0f, 45f)] private float maxFireAngle = 20f;
 
         [Header("Suppression")]
         [Tooltip("Подавление теперь только мажет (разброс), двигаться врага " +
@@ -202,6 +291,11 @@ namespace ZharkoeLeto44.AI
         [Tooltip("Писать в консоль смену состояний, захват и потерю цели. " +
                  "Включай только у одного тестового врага — иначе будет спам.")]
         [SerializeField] private bool debugLogging;
+        [Tooltip("Экранная отладка: над солдатом показывать состояние, роль и жетон. " +
+                 "Работает только в редакторе и dev-сборках.")]
+        [SerializeField] private bool debugOverlay;
+
+        private bool DiagEnabled => debugLogging || debugOverlay;
 
         public EnemyState State { get; private set; }
         public Transform CurrentTarget => _target;
@@ -231,8 +325,51 @@ namespace ZharkoeLeto44.AI
         }
         internal Transform SquadTarget => _target;
         internal EnemyMotor Motor => _motor;
-        internal Team SquadTeam => _health != null ? _health.Team : enemyTeam;
+
+        // ── Данные для координатора отряда ──────────────────────────────────
+        internal int SquadStamp { get; set; }
+        internal SquadRole Role { get; private set; } = SquadRole.Fire;
+        internal bool HasFireToken { get; set; }
+        internal Vector3 SquadGoal { get; set; }
+        internal bool WantsReposition { get; set; }
+        internal bool IsBlockedByAlly => _blockedByAlly;
+        internal float LastTokenTime { get; set; }
+        internal CoverPoint AssignedCover { get; set; }
+        internal float SquadPreferredCombatDistance => preferredCombatDistance;
+        internal float TacticMinTargetDistance => tacticMinTargetDistance;
+        internal int MaxShooters => maxShooters;
+        internal float SquadCommitTime => squadCommitTime;
+        internal float ManeuverDistance => maneuverDistance;
+
+        /// <summary>
+        /// Скорость БЕГА к цели/на позицию. Не ниже порога «run» у аниматора
+        /// (chaseSpeed × sprintSpeedMultiplier), иначе солдат выглядит так, будто
+        /// идёт шагом, и не выглядит «снаряжающимся на бой».
+        /// </summary>
+        private float RunSpeed => chaseSpeed * Mathf.Max(1f, sprintSpeedMultiplier);
+
+        /// <summary>Может ли солдат держать жетон атаки: есть патроны и он не ранен.</summary>
+        internal bool CanTakeFireToken =>
+            weapon != null && weapon.HasAmmunition &&
+            _health != null && _health.NormalizedHealth > woundedHealthThreshold;
+
+        internal void ApplySquadRole(SquadRole role, bool token)
+        {
+            Role = role;
+            HasFireToken = token;
+        }
+
+        /// <summary>
+        /// СОЯЯ команда. Источник истины — CharacterHealth.Team. Поле enemyTeam
+        /// используется только как запасной вариант (если CharacterHealth ещё нет).
+        /// </summary>
+        internal Team OwnTeam => _health != null ? _health.Team : enemyTeam;
+
+        internal Team SquadTeam => OwnTeam;
         internal bool IsSquadAlive => _health != null && _health.IsAlive && State != EnemyState.Dead;
+
+        /// <summary>Солдат в бою/погоне — только такие считаются союзниками по отряду.</summary>
+        internal bool IsInEngagement => State == EnemyState.Chase || State == EnemyState.Combat;
 
         private float SquadCombatEnterDistance => useSquadTactics
             ? Mathf.Min(maximumCombatDistance,
@@ -267,10 +404,12 @@ namespace ZharkoeLeto44.AI
         private float _lastSuppressionShout;
         private Vector3 _suspicionPoint;
         private bool _hasSuspicion;
+        private float _nextRadioTime;
 
         private float _nextPerceptionTime;
         private float _lastPerceptionVisibleTime = float.NegativeInfinity;
         private float _lastPerceptionTime = float.NegativeInfinity;
+        private bool _targetVisibleLastTick;
         private float _searchUntil;
         private float _nextPathRefreshTime;
         private float _patrolWaitUntil;
@@ -298,11 +437,30 @@ namespace ZharkoeLeto44.AI
         private string _lastLosBlocker;
         private string _lastRejectNote;
         private string _lastNoiseInfo;
+        private string _lastNotSeenReason;
+        private string _lastTargetLossReason;
+        private string _lastStateChangeReason;
+        private string _lastExceptionText;
+        private System.Type _lastExceptionType;
+        private float _lastExceptionLogTime = float.NegativeInfinity;
+        private bool _diagLosOverflow;
 
         private Vector3 _searchCenter;
         private float _searchFaceUntil;
         private float _searchBaseYaw;
         private bool _searchBaseCaptured;
+
+        // Поиск: 2–3 точки вокруг последней известной позиции.
+        private readonly Vector3[] _searchPoints = new Vector3[3];
+        private int _searchPointTotal;
+        private int _searchPointIndex;
+        private float _searchLookUntil;
+
+        // Передача контакта союзникам.
+        private float _pendingContactTime = float.NegativeInfinity;
+        private Transform _pendingContactTarget;
+        private Vector3 _pendingContactPoint;
+        private float _targetLostTime = float.NegativeInfinity;
 
         private LookAroundPhase _lookAroundPhase;
         private float _lookAroundBaseYaw;
@@ -317,8 +475,13 @@ namespace ZharkoeLeto44.AI
         private Transform _engageTarget;
         private float _engageStartTime;
         private float _engageEndTime = float.NegativeInfinity;
-        private int _engageHits;
+        private int _engageStage;
+        private bool _engageOpen;
         private float _lastTargetHp;
+        private bool _blockedByAlly;
+        private bool _coverPeeking;
+        private float _coverPeekUntil;
+        private static bool s_fallbackTacticsWarned;
         private int _diagConsidered;
         private int _diagRejectedTeam;
         private int _diagRejectedDead;
@@ -327,16 +490,55 @@ namespace ZharkoeLeto44.AI
         private int _diagRejectedFov;
         private int _diagRejectedLos;
 
-        private readonly Collider[] _targetBuffer = new Collider[128];
-        private readonly HashSet<CharacterHealth> _candidateSet = new();
-        private readonly RaycastHit[] _losBuffer = new RaycastHit[16];
         private readonly Collider[] _eyeBuffer = new Collider[4];
 
+        // Кеш точки прицеливания по персонажам: GetComponentInChildren<Collider>()
+        // по ригу — дорогая операция, а восприятие дёргает её десятки раз в секунду.
+        private struct AimCacheEntry
+        {
+            public CharacterHealth Health;
+            public CharacterController Controller;
+            public Collider Collider;
+        }
+        private readonly AimCacheEntry[] _aimCache = new AimCacheEntry[32];
+        private int _aimCacheCursor;
+
+        // Кеш видимости цели: CanSeeCurrentTarget() дёргается каждый кадр из Chase/Combat.
+        private float _nextLosCheckTime;
+        private float _losCheckInterval = 0.1f;
+        private bool _cachedCanSee;
+        private bool _losBlockedByAlly;
+
         private static readonly HashSet<CharacterHealth> s_characters = new();
+        // Параллельный список: по HashSet нельзя итерировать, если в этот момент
+        // регистрируется новый персонаж (InvalidOperationException). Список
+        // обходим по индексу — это безопасно при изменении состава.
+        private static readonly List<CharacterHealth> s_characterList = new();
         private static readonly List<EnemyAI> s_soldiers = new();
 
+        // Игрок — приоритетная цель. Ссылка приходит из PlayerHealth и не зависит
+        // от того, попал ли CharacterHealth в реестр или в TargetMask.
+        private static CharacterHealth s_playerHealth;
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        private static void ResetSoldierRegistry() => s_soldiers.Clear();
+        private static void ResetSoldierRegistry()
+        {
+            s_soldiers.Clear();
+            s_characters.Clear();
+            s_characterList.Clear();
+            s_playerHealth = null;
+            s_fallbackTacticsWarned = false;
+        }
+
+        public static void RegisterPlayer(CharacterHealth player)
+        {
+            if (player != null) s_playerHealth = player;
+        }
+
+        public static void UnregisterPlayer(CharacterHealth player)
+        {
+            if (s_playerHealth == player) s_playerHealth = null;
+        }
 
         private void RegisterSoldier()
         {
@@ -347,12 +549,16 @@ namespace ZharkoeLeto44.AI
 
         public static void RegisterCharacter(CharacterHealth character)
         {
-            if (character != null) s_characters.Add(character);
+            if (character == null) return;
+            if (!s_characters.Add(character)) return;
+            s_characterList.Add(character);
         }
 
         public static void UnregisterCharacter(CharacterHealth character)
         {
-            if (character != null) s_characters.Remove(character);
+            if (character == null) return;
+            if (!s_characters.Remove(character)) return;
+            s_characterList.Remove(character);
         }
 
         private static readonly int SpeedHash = Animator.StringToHash("Speed");
@@ -394,19 +600,25 @@ namespace ZharkoeLeto44.AI
             // (двойное движение). Движением владеет мотор — гасим принудительно.
             if (animator != null) animator.applyRootMotion = false;
 
+            // targetMask = 0 → «фильтр слоя цели не применён» (раньше молча ставился ~0).
+            // Молчаливая подстановка прятала ошибку в сцене, поэтому теперь только внятное
+            // предупреждение, а слой цели не фильтруется вовсе.
             if (targetMask == 0)
             {
-                targetMask = ~0;
-                Debug.LogWarning($"[EnemyAI] {name}: targetMask был пуст (0) — " +
-                    "автоматически включены все слои. Настрой targetMask в инспекторе " +
-                    "для корректной работы.", this);
+                Debug.LogWarning($"[EnemyAI] {name}: targetMask пуст (0) — фильтр слоя цели " +
+                    "отключён, целью может стать любой персонаж другой команды. Укажи слои " +
+                    "целей в инспекторе.", this);
             }
 
-            if (enemyTeam == Team.Allies)
+            // МИГРАЦИЯ: «своя команда» = CharacterHealth.Team. Поле enemyTeam больше не
+            // решает, кого считать целью, но держим его в согласии с реальной командой,
+            // чтобы инспектор не врал. Прежний костыль «Allies → Axis» удалён.
+            if (_health != null && enemyTeam != _health.Team)
             {
-                enemyTeam = Team.Axis;
-                Debug.LogWarning($"[EnemyAI] {name}: enemyTeam был Allies (старое значение " +
-                    "из сцены) — автоматически исправлен на Axis.", this);
+                Debug.LogWarning($"[EnemyAI] {name}: enemyTeam ({enemyTeam}) не совпадает с " +
+                    $"командой персонажа ({_health.Team}) — взята команда CharacterHealth. " +
+                    "Старое значение поля оставлено только для миграции.", this);
+                enemyTeam = _health.Team;
             }
 
             if (weapon == null) weapon = GetComponentInChildren<HitscanWeapon>(true);
@@ -422,6 +634,11 @@ namespace ZharkoeLeto44.AI
             NoiseSystem.NoiseCreated += OnNoiseCreated;
             SubscribeWeapon(weapon);
             State = EnemyState.Patrol;
+            if (_motor != null)
+            {
+                _motor.SetManualRotation(false);
+                _motor.SetAutoRotation(true);
+            }
             _fireAnchorUntil = 0f;
             _squadPersonalSpace = 0f;
             _hasCombatAnchor = false;
@@ -429,6 +646,21 @@ namespace ZharkoeLeto44.AI
             _lookAroundPhase = LookAroundPhase.None;
             _nextLookAroundTime = Time.time + Random.Range(lookAroundIntervalMin,
                 lookAroundIntervalMax);
+            _nextPerceptionTime = Time.time + Random.Range(0f,
+                Mathf.Max(0.02f, perceptionInterval + perceptionTickJitter));
+            _losCheckInterval = 0.1f + Random.Range(0f, 0.1f);
+            _nextLosCheckTime = 0f;
+            _cachedCanSee = false;
+            _losBlockedByAlly = false;
+            _targetVisibleLastTick = false;
+            _hasPathDestination = false;
+            _nextPathRefreshTime = 0f;
+            _lastNotSeenReason = null;
+            _lastTargetLossReason = null;
+            _lastStateChangeReason = null;
+            _lastExceptionText = null;
+            _lastExceptionType = null;
+            _lastExceptionLogTime = float.NegativeInfinity;
         }
 
         private void Start()
@@ -441,6 +673,36 @@ namespace ZharkoeLeto44.AI
 
             _motor.SetSpeed(patrolSpeed);
             _motor.SetAutoRotation(true);
+            // Свой приоритет обхода у каждого солдата: иначе все с avoidancePriority = 50
+            // толкались в проходе друг друга.
+            _motor.SetAvoidancePriority(HashAvoidancePriority(GetInstanceID()));
+            ApplySpeedAnchors();
+        }
+
+        /// <summary>
+        /// ЕДИНЫЙ ИСТОЧНИК СКОРОСТЕЙ: якоря анимации = реальные скорости ИИ.
+        /// Раньше клип бега крутился со скоростью патруля — ноги скользили.
+        /// </summary>
+        private void ApplySpeedAnchors()
+        {
+            if (enemyAnimator == null) return;
+            enemyAnimator.ConfigureSpeedAnchors(
+                patrolSpeed,
+                chaseSpeed,
+                chaseSpeed * Mathf.Max(1f, sprintSpeedMultiplier));
+        }
+
+        /// <summary>Приоритет обхода по хэшу id: у каждого солдата свой (20–99).</summary>
+        private static int HashAvoidancePriority(int id)
+        {
+            unchecked
+            {
+                uint h = (uint)id * 2654435761u;
+                h ^= h >> 15;
+                h *= 2246822519u;
+                h ^= h >> 13;
+                return 20 + (int)(h % 80u);
+            }
         }
 
         /// <summary>Псевдослучайный угол 0–360° от id объекта: у соседей он разный.</summary>
@@ -561,7 +823,7 @@ namespace ZharkoeLeto44.AI
             if (State == EnemyState.Dead) return;
 
             CharacterHealth targetHealth = target.GetComponentInParent<CharacterHealth>();
-            if (targetHealth != null && targetHealth.Team == enemyTeam) return;
+            if (targetHealth != null && targetHealth.Team == OwnTeam) return;
             if (targetHealth != null && !targetHealth.IsAlive) return;
 
             SetTarget(target);
@@ -604,8 +866,14 @@ namespace ZharkoeLeto44.AI
 
         private void OnWeaponFired(Vector3 impactPoint)
         {
-            if (enemyAnimator != null) enemyAnimator.PlayShoot();
-            // ДЫРА: триггер на каждый выстрел вешал Animator. Legacy-путь троттлим.
+            if (enemyAnimator != null)
+            {
+                // Анимация выстрела НЕ перезапускается на каждом выстреле очереди:
+                // первый — полный клип, дальше — короткая отдача (если клип задан).
+                if (_burstShotIndex <= 0) enemyAnimator.PlayShoot();
+                else enemyAnimator.PlayShootRecoil();
+            }
+            // DЫРА: триггер на каждый выстрел вешал Animator. Legacy-путь троттлим.
             else if (Time.time >= _nextLegacyShootAnimTime)
             {
                 _nextLegacyShootAnimTime = Time.time + 0.3f;
@@ -628,39 +896,115 @@ namespace ZharkoeLeto44.AI
             float dt = Time.deltaTime;
             _suppression = Mathf.Max(0f, _suppression - suppressionDecay * dt);
 
-            if (Time.time >= _nextPerceptionTime)
+            try
             {
-                _nextPerceptionTime = Time.time + perceptionInterval + Random.Range(0f, 0.04f);
-                UpdatePerception();
+                if (Time.time >= _nextPerceptionTime)
+                {
+                    _nextPerceptionTime = Time.time + perceptionInterval +
+                        Random.Range(0f, Mathf.Max(0f, perceptionTickJitter));
+                    UpdatePerception();
+                }
+
+                UpdatePendingContact();
+            }
+            catch (System.Exception e)
+            {
+                ReportSubsystemFailure("perception", e);
             }
 
-            // БАГФИКС: раньше awareness гас каждый кадр, даже пока цель была
-            // прямо перед глазами. На дальней дистанции набор
-            // (0.4..1.4)/timeToDetect в секунду почти полностью съедался
-            // затуханием — враг мог смотреть на игрока 5+ секунд и не замечать.
-            // Теперь гаснем только когда цель реально не видна.
+            try
+            {
+                if (useSquadTactics) SquadCoordinator.Tick(Time.time);
+            }
+            catch (System.Exception e)
+            {
+                ReportSubsystemFailure("squad", e);
+            }
+
             bool recentlySeen = Time.time - _lastPerceptionVisibleTime
                 <= perceptionInterval * 2f + 0.05f;
             if (!recentlySeen && (_awareness < 1f || _target == null))
                 _awareness = Mathf.Max(0f, _awareness - awarenessDecay * dt);
 
-            switch (State)
+            try
             {
-                case EnemyState.Patrol: UpdatePatrol(); break;
-                case EnemyState.Alert: UpdateAlert(); break;
-                case EnemyState.Search: UpdateSearch(); break;
-                case EnemyState.Chase: UpdateChase(); break;
-                case EnemyState.Combat: UpdateCombat(); break;
+                switch (State)
+                {
+                    case EnemyState.Patrol: UpdatePatrol(); break;
+                    case EnemyState.Alert: UpdateAlert(); break;
+                    case EnemyState.Search: UpdateSearch(); break;
+                    case EnemyState.Chase: UpdateChase(); break;
+                    case EnemyState.Combat: UpdateCombat(); break;
+                }
+            }
+            catch (System.Exception e)
+            {
+                ReportSubsystemFailure("state", e);
+                ApplyStateFailureFallback();
             }
 
-            UpdateAnimator();
-            UpdateVoiceFootsteps();
+            try
+            {
+                UpdateAnimator();
+            }
+            catch (System.Exception e)
+            {
+                ReportSubsystemFailure("animator", e);
+            }
+
+            try
+            {
+                UpdateVoiceFootsteps();
+            }
+            catch (System.Exception e)
+            {
+                ReportSubsystemFailure("voice", e);
+            }
 
             if (debugLogging && Time.time >= _nextDiagTime)
             {
                 _nextDiagTime = Time.time + 1.5f;
                 LogDiag();
             }
+        }
+
+        private void ReportSubsystemFailure(string subsystem, System.Exception exception)
+        {
+            if (exception == null) return;
+
+            System.Type type = exception.GetType();
+            bool newType = type != _lastExceptionType;
+            bool throttled = Time.unscaledTime - _lastExceptionLogTime >= 5f;
+            if (!newType && !throttled) return;
+
+            _lastExceptionType = type;
+            _lastExceptionLogTime = Time.unscaledTime;
+
+            string stack = exception.StackTrace;
+            int lineEnd = stack != null ? stack.IndexOf('\n') : -1;
+            string firstLine = lineEnd > 0 ? stack.Substring(0, lineEnd) : stack;
+
+            if (DiagEnabled)
+                _lastExceptionText = $"{type.Name}: {exception.Message}";
+
+            if (newType)
+            {
+                Debug.LogError($"[EnemyAI] {name}: сбой подсистемы «{subsystem}» ({State}), " +
+                    $"тип {type.Name}: {exception.Message}. Враг продолжает работать. " +
+                    $"Первая строка стека: {firstLine}", this);
+            }
+            else
+            {
+                Debug.LogWarning($"[EnemyAI] {name}: повтор сбоя «{subsystem}» ({State}), " +
+                    $"тип {type.Name}.", this);
+            }
+        }
+
+        private void ApplyStateFailureFallback()
+        {
+            if (_motor == null || _target == null) return;
+            _motor.Stop();
+            _motor.FaceTowardsAtSpeed(_target.position, combatTurnSpeed);
         }
 
         private void UpdatePerception()
@@ -674,11 +1018,24 @@ namespace ZharkoeLeto44.AI
 
             if (visible != null)
             {
+                // Повторное появление цели после паузы: короткая задержка
+                // ставится ОДИН раз, а не на каждом тике восприятия.
+                bool reacquired = _firstSightAcquired && !_targetVisibleLastTick;
+                float previousVisibleTime = _lastPerceptionVisibleTime;
+
+                _targetVisibleLastTick = true;
                 _lastPerceptionVisibleTime = Time.time;
 
-                float distanceFactor = Mathf.Clamp01(1f - visDistance / viewDistance);
-                float gain = (0.4f + distanceFactor) / Mathf.Max(0.05f, timeToDetect);
-                _awareness = Mathf.Min(1f, _awareness + gain * tickDt);
+                if (visDistance <= Mathf.Max(0f, instantDetectDistance))
+                {
+                    _awareness = 1f;
+                }
+                else
+                {
+                    float distanceFactor = Mathf.Clamp01(1f - visDistance / viewDistance);
+                    float gain = (0.4f + distanceFactor) / Mathf.Max(0.05f, timeToDetect);
+                    _awareness = Mathf.Min(1f, _awareness + gain * tickDt);
+                }
 
                 SetTarget(visible);
                 TrackTargetKinematics(visible.position, tickDt);
@@ -697,6 +1054,13 @@ namespace ZharkoeLeto44.AI
                         if (debugLogging)
                             Debug.Log($"[EnemyAI] {name}: заметил цель «{visible.name}» " +
                                 $"(дистанция {visDistance:F1} м)", this);
+                    }
+                    else if (reacquired &&
+                             Time.time - previousVisibleTime >
+                             perceptionInterval * 2f + 0.05f)
+                    {
+                        _canFireAfter = Mathf.Max(_canFireAfter,
+                            Time.time + suddenTargetReactionDelay);
                     }
 
                     // Гистерезис границы боя: уже в бою — держим его до +5 м,
@@ -724,12 +1088,14 @@ namespace ZharkoeLeto44.AI
                 return;
             }
 
+            _targetVisibleLastTick = false;
+
             if (_target != null && Time.time - _lastTargetSeenTime > targetMemoryDuration)
             {
                 if (debugLogging)
                     Debug.Log($"[EnemyAI] {name}: потерял цель «{_target.name}» — " +
                         $"не видел {targetMemoryDuration:F0} сек", this);
-                ClearTarget();
+                ClearTarget($"MEMORY({targetMemoryDuration:F0}s)");
                 _firstSightAcquired = false;
             }
 
@@ -775,12 +1141,16 @@ namespace ZharkoeLeto44.AI
 
             Debug.Log($"[EnemyAI] {name}: {State} aware={_awareness:F2} | цель: {targetInfo} | " +
                 $"{weaponInfo} | мотор: {(_motor != null ? _motor.Mode.ToString() : "—")} | " +
-                $"схватка: {_engageHits} попаданий | " +
+                $"роль: {Role}{(HasFireToken ? " +жетон" : "")} | " +
+                $"схватка: стадия {_engageStage} | " +
                 $"канд.: {_diagConsidered} " +
                 $"(ком×{_diagRejectedTeam} мертв×{_diagRejectedDead} слой×{_diagRejectedLayer} " +
                 $"дист×{_diagRejectedDist} fov×{_diagRejectedFov} los×{_diagRejectedLos})" +
                 (_lastRejectNote != null ? $" | {_lastRejectNote}" : "") +
-                (_lastNoiseInfo != null ? $" | последний {_lastNoiseInfo}" : ""), this);
+                (_lastNoiseInfo != null ? $" | последний {_lastNoiseInfo}" : "") +
+                $" | не вижу: {(_lastNotSeenReason ?? "—")}" +
+                $" | потеря: {(_lastTargetLossReason ?? "—")}" +
+                $" | смена: {(_lastStateChangeReason ?? "—")}", this);
         }
 
         private bool IsTargetVisibleNow(out string blocker)
@@ -817,12 +1187,14 @@ namespace ZharkoeLeto44.AI
         {
             bestDistance = float.MaxValue;
 
-            int count = Physics.OverlapSphereNonAlloc(
-                transform.position, viewDistance, _targetBuffer,
-                targetMask, QueryTriggerInteraction.Ignore);
-
-            _candidateSet.Clear();
+            // РЕЕСТР вместо OverlapSphere: обход всех коллайдеров в радиусе ломался на
+            // 128 слотах (при targetMask = ~0 на открытой местности) и дёргал
+            // GetComponentInParent на каждом. Персонажи и так знают друг о друге через
+            // статический реестр s_characters — перебираем только их и отсекаем
+            // по квадрату дистанции ещё до любых проверок.
             _lastRejectNote = null;
+            _lastNotSeenReason = null;
+            _diagLosOverflow = false;
             _diagConsidered = 0;
             _diagRejectedTeam = 0;
             _diagRejectedDead = 0;
@@ -833,72 +1205,150 @@ namespace ZharkoeLeto44.AI
             Transform best = null;
             float bestScore = float.MaxValue;
 
-            for (int i = 0; i < count; i++)
+            // Обход по индексу: список персонажей может измениться прямо сейчас
+            // (кто-то зарегистрировался), итерация по HashSet бросила бы исключение.
+            bool playerEvaluated = false;
+            for (int i = 0; i < s_characterList.Count; i++)
             {
-                Collider col = _targetBuffer[i];
-                if (col == null) continue;
-
-                CharacterHealth cand = col.GetComponentInParent<CharacterHealth>();
+                CharacterHealth cand = s_characterList[i];
                 if (cand == null) continue;
+                if (cand == s_playerHealth ||
+                    (DiagEnabled && !playerEvaluated && cand.CompareTag("Player")))
+                    playerEvaluated = true;
                 EvaluateCandidate(cand, ref best, ref bestScore, ref bestDistance);
             }
 
-            foreach (CharacterHealth cand in s_characters)
+            // Игрок — всегда валидная цель, даже если его CharacterHealth не попал
+            // в реестр или слой выпал из TargetMask. Это убирает «слепоту» на игрока
+            // при рассинхроне настроек сцены/префаба.
+            if (!playerEvaluated && s_playerHealth != null && s_playerHealth != _health)
             {
-                if (cand == null) continue;
-                EvaluateCandidate(cand, ref best, ref bestScore, ref bestDistance);
+                playerEvaluated = true;
+                EvaluateCandidate(s_playerHealth, ref best, ref bestScore, ref bestDistance, true);
             }
+
+            if (DiagEnabled && !playerEvaluated)
+                _lastNotSeenReason = "NOT_IN_REGISTRY";
 
             return best;
         }
 
         private void EvaluateCandidate(CharacterHealth cand, ref Transform best,
-            ref float bestScore, ref float bestDistance)
+            ref float bestScore, ref float bestDistance, bool isPlayer = false)
         {
-            if (!_candidateSet.Add(cand)) return;
             _diagConsidered++;
-            if (!cand.IsAlive) { _diagRejectedDead++; return; }
-            if (cand.Team == enemyTeam) { _diagRejectedTeam++; return; }
+            // Тег проверяем всегда: иначе при пустом s_playerHealth и выключенной
+            // диагностике игрок мог быть отсечён фильтром слоя.
+            bool playerTarget = isPlayer || cand == s_playerHealth || cand.CompareTag("Player");
+
+            if (!cand.IsAlive)
+            {
+                _diagRejectedDead++;
+                if (playerTarget && DiagEnabled) _lastNotSeenReason = "DEAD";
+                return;
+            }
+            if (cand.Team == OwnTeam)
+            {
+                _diagRejectedTeam++;
+                if (playerTarget && DiagEnabled) _lastNotSeenReason = "SAME_TEAM";
+                return;
+            }
             if (cand.gameObject == gameObject) return;
 
-            if ((targetMask.value & (1 << cand.gameObject.layer)) == 0)
+            // Слой цели: 0 = фильтр не применён (см. предупреждение в Awake).
+            // Для игрока фильтр игнорируется: он должен быть виден всегда.
+            if (targetMask.value != 0 &&
+                (targetMask.value & (1 << cand.gameObject.layer)) == 0)
             {
                 _diagRejectedLayer++;
-                _lastRejectNote = $"слой {LayerMask.LayerToName(cand.gameObject.layer)} не в TargetMask";
+                string layerName = LayerMask.LayerToName(cand.gameObject.layer);
+                if (playerTarget)
+                {
+                    // LAYER фиксируем в отладке, но игрока всё равно проверяем:
+                    // рассинхрон слоя не должен делать его невидимым.
+                    if (DiagEnabled)
+                        _lastRejectNote = $"LAYER: игрок вне TargetMask (слой {layerName}) — обход";
+                }
+                else
+                {
+                    _lastRejectNote = $"слой {layerName} не в TargetMask";
+                    return;
+                }
+            }
+
+            // Ранний отсев по квадрату дистанции — до любых дорогих проверок.
+            Vector3 eye = eyePoint.position;
+            float rough = Vector3.Distance(eye, cand.transform.position);
+            if (rough > viewDistance + 3f)
+            {
+                _diagRejectedDist++;
+                if (playerTarget && DiagEnabled) _lastNotSeenReason = $"TOO_FAR({rough:F1})";
                 return;
             }
 
-            Vector3 aimPoint = GetTargetAimPoint(cand.transform);
-            Vector3 toTarget = aimPoint - eyePoint.position;
+            Vector3 aimPoint = GetTargetAimPoint(cand);
+            Vector3 toTarget = aimPoint - eye;
             float distance = toTarget.magnitude;
-            if (distance <= 0.01f || distance > viewDistance) { _diagRejectedDist++; return; }
-
-            if (Mathf.Abs(aimPoint.y - eyePoint.position.y) > verticalViewTolerance)
+            if (distance <= 0.01f || distance > viewDistance)
             {
                 _diagRejectedDist++;
+                if (playerTarget && DiagEnabled) _lastNotSeenReason = $"TOO_FAR({distance:F1})";
+                return;
+            }
+
+            if (Mathf.Abs(aimPoint.y - eye.y) > verticalViewTolerance)
+            {
+                _diagRejectedFov++;
+                if (playerTarget && DiagEnabled)
+                    _lastNotSeenReason = $"OUT_OF_FOV(vert {Mathf.Abs(aimPoint.y - eye.y):F1})";
                 return;
             }
 
             // БАГФИКС: в упор (closeDetectDistance) зрение круговое — раньше
             // игрок в 2 метрах сбоку/сзади был невидим, т.к. угол > FOV/2.
-            bool isClose = distance <= closeDetectDistance;
+            // Для игрока радиус кругового зрения чуть больше: он не должен
+            // проскакивать мимо солдата незамеченным.
+            float closeRadius = playerTarget
+                ? Mathf.Max(closeDetectDistance, 10f)
+                : closeDetectDistance;
+            bool isClose = distance <= closeRadius;
             float angle = 0f;
             if (!isClose)
             {
-                Vector3 flatFwd = eyePoint.forward; flatFwd.y = 0f;
+                // FOV считаем по телу, а не по EyePoint: у модели глаз может быть
+                // повёрнут/смещён и «съедать» цель прямо по курсу.
+                Vector3 flatFwd = transform.forward; flatFwd.y = 0f;
                 Vector3 flatDir = toTarget; flatDir.y = 0f;
                 if (flatDir.sqrMagnitude < 0.0001f) { _diagRejectedFov++; return; }
                 if (flatFwd.sqrMagnitude < 0.0001f)
                 {
-                    flatFwd = transform.forward; flatFwd.y = 0f;
+                    flatFwd = eyePoint.forward; flatFwd.y = 0f;
                     if (flatFwd.sqrMagnitude < 0.0001f) flatFwd = Vector3.forward;
                 }
 
                 angle = Vector3.Angle(flatFwd, flatDir);
-                if (angle > fieldOfView * 0.5f) { _diagRejectedFov++; return; }
+                if (angle > fieldOfView * 0.5f)
+                {
+                    _diagRejectedFov++;
+                    if (playerTarget && DiagEnabled)
+                        _lastNotSeenReason = $"OUT_OF_FOV({angle:F0})";
+                    return;
+                }
             }
 
-            if (!HasLineOfSight(cand, aimPoint)) { _diagRejectedLos++; return; }
+            if (!HasLineOfSight(cand, aimPoint))
+            {
+                _diagRejectedLos++;
+                if (playerTarget && DiagEnabled)
+                {
+                    _lastNotSeenReason = _diagLosOverflow
+                        ? "BUFFER_OVERFLOW"
+                        : (_lastLosBlocker != null
+                            ? $"LOS_BLOCKED({_lastLosBlocker})"
+                            : "LOS_BLOCKED");
+                }
+                return;
+            }
 
             float score = distance + angle * 0.1f;
             if (score < bestScore)
@@ -912,6 +1362,11 @@ namespace ZharkoeLeto44.AI
         private bool HasLineOfSight(CharacterHealth targetHealth, Vector3 targetPoint)
             => HasLineOfSight(targetHealth, targetPoint, out _);
 
+        /// <summary>
+        /// Луч обзора. СОЮЗНИКИ НЕ БЛОКИРУЮТ обзор: солдат в шеренге между стрелком и
+        /// игроком больше не «съедает» цель. Помеха помехой считается только геометрия
+        /// (стены, укрытия) и чужие.
+        /// </summary>
         private bool HasLineOfSight(CharacterHealth targetHealth, Vector3 targetPoint,
             out bool blockedByAlly)
         {
@@ -922,71 +1377,70 @@ namespace ZharkoeLeto44.AI
             if (dist <= 0.001f) return true;
             dir /= dist;
 
-            int count = Physics.RaycastNonAlloc(origin, dir, _losBuffer,
-                dist + 0.2f, visibilityMask, QueryTriggerInteraction.Ignore);
+            // Слой цели добавляем к маске препятствий: иначе луч «проходит» сквозь
+            // цель, если её слой не входит в visibilityMask, и видимость теряется.
+            int losMask = visibilityMask;
+            if (targetHealth != null) losMask |= 1 << targetHealth.gameObject.layer;
 
             int eyeCount = Physics.OverlapSphereNonAlloc(origin, 0.25f, _eyeBuffer,
                 visibilityMask, QueryTriggerInteraction.Ignore);
 
-            for (int i = 1; i < count; i++)
+            float travelled = 0f;
+            int skipped = 0;
+            while (travelled < dist)
             {
-                RaycastHit key = _losBuffer[i];
-                int j = i - 1;
-                while (j >= 0 && _losBuffer[j].distance > key.distance)
+                if (++skipped > 128)
                 {
-                    _losBuffer[j + 1] = _losBuffer[j];
-                    j--;
+                    _diagLosOverflow = true;
+                    _lastLosBlocker = "BUFFER_OVERFLOW";
+                    return false;
                 }
-                _losBuffer[j + 1] = key;
-            }
 
-            for (int i = 0; i < count; i++)
-            {
-                RaycastHit hit = _losBuffer[i];
+                Vector3 rayOrigin = origin + dir * travelled;
+                float remaining = dist + 0.2f - travelled;
+                if (!Physics.Raycast(rayOrigin, dir, out RaycastHit hit, remaining,
+                        losMask, QueryTriggerInteraction.Ignore))
+                    break;
+
+                float hitDistance = travelled + hit.distance;
                 Transform hitTransform = hit.transform;
-                if (hitTransform == null) continue;
-
-                if (hitTransform.root == transform.root) continue;
-                if (hit.distance < 0.5f && IsEnclosingEyeCollider(hit.collider, eyeCount))
+                if (hitTransform == null)
+                {
+                    travelled = hitDistance + 0.02f;
                     continue;
-
-                // БАГФИКС 1: попадание в любое место тела цели (даже если
-                // CharacterHealth висит не на том объекте, что коллайдер) —
-                // раньше сравнивались Transform'ы и луч по своему же телу
-                // считался стеной.
-                if (targetHealth != null)
-                {
-                    CharacterHealth hitHealth =
-                        hit.collider.GetComponentInParent<CharacterHealth>();
-                    if (hitHealth == targetHealth)
-                    {
-                        _lastLosBlocker = null;
-                        return true;
-                    }
                 }
-                else if (hitTransform == targetHealth?.transform ||
-                         (targetHealth != null && hitTransform.IsChildOf(targetHealth.transform)))
+
+                if (hitTransform.root == transform.root)
+                {
+                    travelled = hitDistance + 0.02f;
+                    continue;
+                }
+                if (hitDistance < 0.5f && IsEnclosingEyeCollider(hit.collider, eyeCount))
+                {
+                    travelled = hitDistance + 0.02f;
+                    continue;
+                }
+
+                CharacterHealth hitHealth = hit.collider.GetComponentInParent<CharacterHealth>();
+                if (targetHealth != null && hitHealth == targetHealth)
                 {
                     _lastLosBlocker = null;
                     return true;
                 }
 
-                // БАГФИКС 2: стена ЗА спиной игрока (игрок без обычного
-                // коллайдера — только CharacterController, который луч
-                // игнорирует) давала ложное «не видно»: луч долетал до стены
-                // в dist+0.1 и она считалась препятствием. Всё, что на уровне
-                // цели или дальше неё — не препятствие.
-                if (hit.distance >= dist - 0.35f)
+                if (hitDistance >= dist - 0.35f)
                 {
                     _lastLosBlocker = null;
                     return true;
                 }
 
-                CharacterHealth blockerHealth =
-                    hit.collider.GetComponentInParent<CharacterHealth>();
-                blockedByAlly = blockerHealth != null &&
-                    blockerHealth != targetHealth &&
-                    blockerHealth.Team == SquadTeam;
+                if (hitHealth != null && hitHealth.Team == OwnTeam)
+                {
+                    blockedByAlly = true;
+                    _lastLosBlocker = null;
+                    travelled = hitDistance + 0.02f;
+                    continue;
+                }
 
                 _lastLosBlocker = hitTransform.name;
                 return false;
@@ -997,11 +1451,18 @@ namespace ZharkoeLeto44.AI
         }
 
         private bool HasLineOfSight(Transform target, Vector3 targetPoint)
+            => HasLineOfSight(target, targetPoint, out _);
+
+        private bool HasLineOfSight(Transform target, Vector3 targetPoint,
+            out bool blockedByAlly)
         {
             CharacterHealth health = null;
-            if (target != null) health = target.GetComponentInParent<CharacterHealth>();
-            if (health == null && _targetHealth != null && target == _target) health = _targetHealth;
-            return HasLineOfSight(health, targetPoint);
+            if (target != null && target == _target && _targetHealth != null)
+                health = _targetHealth;
+            else if (target != null)
+                health = target.GetComponentInParent<CharacterHealth>();
+
+            return HasLineOfSight(health, targetPoint, out blockedByAlly);
         }
 
         private bool IsEnclosingEyeCollider(Collider collider, int eyeCount)
@@ -1150,6 +1611,7 @@ namespace ZharkoeLeto44.AI
                 : _lookAroundTargetYaw;
             Vector3 lookPoint = transform.position +
                 Quaternion.Euler(0f, targetYaw, 0f) * Vector3.forward * 4f;
+            _motor.SetManualRotation(true);
             _motor.FaceTowardsAtSpeed(lookPoint, lookAroundTurnSpeed);
 
             float angle = Mathf.Abs(Mathf.DeltaAngle(transform.eulerAngles.y, targetYaw));
@@ -1196,7 +1658,9 @@ namespace ZharkoeLeto44.AI
                 return;
             }
 
-            _motor.SetSpeed(chaseSpeed * 0.8f);
+            // Настороженный — тоже бегом: подозрение горит, идти шагом нельзя.
+            _motor.SetSpeed(RunSpeed);
+            _motor.SetSprintMode(true);
             RefreshDestination(_suspicionPoint);
 
             if (_motor.HasArrived())
@@ -1212,6 +1676,36 @@ namespace ZharkoeLeto44.AI
         private void UpdateSearch()
         {
             _motor.SetSpeed(patrolSpeed);
+
+            // Проверяем 2–3 точки вокруг последней известной позиции: у разных
+            // солдат точки РАЗНЫЕ (свой сектор), иначе все идут в одно место.
+            if (_searchPointIndex < _searchPointTotal)
+            {
+                Vector3 point = _searchPoints[_searchPointIndex];
+                if (!_motor.HasDestination) MoveTo(point);
+
+                if (!_motor.HasArrived())
+                {
+                    _motor.SetAutoRotation(true);
+                    return;
+                }
+
+                // На месте: осматриваемся, потом идём к следующей точке.
+                _motor.Stop();
+                _motor.SetManualRotation(true);
+                _motor.FaceTowardsAtSpeed(point + transform.forward * 6f, combatTurnSpeed * 1.5f);
+
+                if (Time.time >= _searchLookUntil)
+                {
+                    _searchLookUntil = Time.time + 1.5f;
+                    _searchPointIndex++;
+                    if (_searchPointIndex < _searchPointTotal)
+                        MoveTo(_searchPoints[_searchPointIndex]);
+                }
+                return;
+            }
+
+            // Все точки проверены — осматриваемся на месте.
             _motor.Stop();
 
             if (Time.time < _searchFaceUntil)
@@ -1229,9 +1723,10 @@ namespace ZharkoeLeto44.AI
                 float sweepTime = Time.time - _searchFaceUntil;
                 float targetYaw = _searchBaseYaw +
                     Mathf.Sin(sweepTime * 0.7f) * searchSweepAmplitude;
-                Quaternion targetRot = Quaternion.Euler(0f, targetYaw, 0f);
-                transform.rotation = Quaternion.RotateTowards(
-                    transform.rotation, targetRot, searchSweepSpeed * Time.deltaTime);
+                // Поворот — ТОЛЬКО через мотор: раньше ИИ писал transform.rotation сам и
+                // спорил с мотором/агентом за угол тела.
+                _motor.SetManualRotation(true);
+                _motor.FaceYawAtSpeed(targetYaw, searchSweepSpeed);
             }
 
             // БАГФИКС: раньше поиск длился ~1 сек (0.4→0.02 при decay 0.35),
@@ -1240,6 +1735,35 @@ namespace ZharkoeLeto44.AI
             if (_awareness <= 0.02f && Time.time >= _searchUntil &&
                 Time.time - _lastTargetSeenTime > targetMemoryDuration)
                 ChangeState(EnemyState.Patrol);
+        }
+
+        /// <summary>
+        /// Точки для проверки: 2–3 точки вокруг последней известной позиции.
+        /// Сектор у каждого солдата свой — отряд не топчется в одной точке.
+        /// Точка берётся только если до неё ЕСТЬ путь (иначе солдат встанет).
+        /// </summary>
+        private void BuildSearchPoints()
+        {
+            _searchPointTotal = 0;
+            _searchPointIndex = 0;
+            _searchLookUntil = 0f;
+
+            int count = Mathf.Clamp(searchPointCount, 2, _searchPoints.Length);
+            float baseAngle = HashAngle(GetInstanceID()) + HashAngle(_patrolIndex * 7919 + 13);
+
+            for (int i = 0; i < count && _searchPointTotal < _searchPoints.Length; i++)
+            {
+                float angle = (baseAngle + i * (360f / count) + Random.Range(-25f, 25f)) * Mathf.Deg2Rad;
+                float radius = Random.Range(4f, 9f);
+                Vector3 desired = _searchCenter +
+                    new Vector3(Mathf.Sin(angle) * radius, 0f, Mathf.Cos(angle) * radius);
+
+                Vector3 point = desired;
+                if (_motor != null)
+                    _motor.SampleReachablePoint(desired, 7f, out point, true);
+
+                _searchPoints[_searchPointTotal++] = point;
+            }
         }
 
         private void UpdateChase()
@@ -1255,11 +1779,25 @@ namespace ZharkoeLeto44.AI
                 return;
             }
 
-            _motor.SetSpeed(chaseSpeed * (useSquadTactics ? squadPursuitSpeedScale : 1f));
+            // Погоня — бегом: если кто-то рядом уже стреляет, остальные должны
+            // быстро подтянуться, а не топать шагом.
+            _motor.SetSpeed(RunSpeed);
+            _motor.SetSprintMode(true);
             bool recentlyVisible = Time.time - _lastTargetSeenTime <= perceptionInterval * 2f;
+
             Vector3 chaseGoal = useSquadTactics && recentlyVisible
                 ? InfantrySquad.AdjustChaseGoal(this, _lastKnownTargetPosition)
                 : _lastKnownTargetPosition;
+
+            // Предсказание ухода цели: идём не в точку, а туда, куда она УХОДИТ.
+            if (recentlyVisible && _targetVelocity.sqrMagnitude > 0.25f && chaseLeadTime > 0f)
+            {
+                Vector3 lead = Vector3.ClampMagnitude(_targetVelocity * chaseLeadTime,
+                    chaseLeadMaxDistance);
+                lead.y = 0f;
+                chaseGoal += lead;
+            }
+
             RefreshDestination(chaseGoal);
 
             if (_motor.HasArrived())
@@ -1296,7 +1834,7 @@ namespace ZharkoeLeto44.AI
             bool visible = CanSeeCurrentTarget();
             if (visible) _lastVisibleTime = Time.time;
 
-            UpdateEngageHitTracking();
+            UpdateEngageStage();
 
             // Потеряли из виду — короткий «миг» (луч зацепил угол) терпим,
             // дальше идём по последней известной точке.
@@ -1313,14 +1851,22 @@ namespace ZharkoeLeto44.AI
                 return;
             }
 
-            _motor.FaceTowardsAtSpeed(holdingThroughFlicker ? _lastKnownTargetPosition : _target.position,
-                combatTurnSpeed);
-
             if (holdingThroughFlicker)
             {
                 _motor.Stop();
+                _motor.FaceTowardsAtSpeed(_lastKnownTargetPosition, combatTurnSpeed);
                 return;
             }
+
+            // ТАКТИКА ОТРЯДА: роли и жетоны решает координатор, солдат исполняет.
+            if (useSquadTactics && TacticsAvailable)
+            {
+                ExecuteSquadRole(distance);
+                return;
+            }
+            if (useSquadTactics) WarnFallbackTacticsOnce();
+
+            _motor.FaceTowardsAtSpeed(_target.position, combatTurnSpeed);
 
             // СВОЯ ТОЧКА В БОЮ.
             // Раньше все шли на координаты игрока и вставали в одну точку.
@@ -1332,22 +1878,215 @@ namespace ZharkoeLeto44.AI
 
             bool holdingFire = Time.time < _fireAnchorUntil;
 
-            if (!holdingFire && anchorDistance > combatAnchorTolerance)
+            // Цель видна и мы в боевой дистанции — СТОИМ И СТРЕЛЯЕМ.
+            // Якорь в этом случае заморожен (см. UpdateCombatAnchor), поэтому
+            // солдат доходит до своей позиции и стоит, а не топает бесконечно
+            // вперёд за уходящим якорем.
+            // (visible уже посчитан выше — CanSeeCurrentTarget кеширует результат.)
+            bool holdForShot = visible && !holdingFire && WouldTurnAwayFromTarget(anchor);
+
+            bool moving = false;
+            if (!holdingFire && !holdForShot &&
+                anchorDistance > combatAnchorTolerance)
             {
-                // Далеко от цели — подходим быстрее (но всё равно не рывком),
-                // на дистанции — переступаем не спеша.
-                float speed = distance > preferredCombatDistance + 3f
-                    ? chaseSpeed
-                    : combatApproachSpeed;
-                _motor.SetSpeed(speed);
+                // Смена позиции — бегом: солдат не топает на месте, а быстро
+                // занимает своё место в строю и оттуда стреляет.
+                _motor.SetSpeed(RunSpeed);
+                _motor.SetSprintMode(true);
                 RefreshDestination(anchor, 1f);
+                moving = true;
             }
             else
             {
                 _motor.Stop();
+                _motor.SetSprintMode(false);
             }
 
-            UpdateFiring(distance, _motor.CurrentSpeed);
+            // ПРАВИЛО ДВИЖЕНИЯ: «идёт — смотрит по ходу и не стреляет;
+            // стреляет — стоит и довёрнут на цель».
+            if (!holdForShot && (moving || _motor.CurrentSpeed > 0.3f))
+            {
+                _motor.SetAutoRotation(true);
+            }
+            else
+            {
+                _motor.SetAutoRotation(false);
+                _motor.FaceTowardsAtSpeed(_target.position, combatTurnSpeed);
+            }
+
+            UpdateFiring(distance, _motor.CurrentSpeed, moving);
+        }
+
+        /// <summary>
+        /// Тактика доступна только на запечённом NavMesh: в режиме Fallback
+        /// (навмеша нет) укрытия и перебежки отключаются.
+        /// </summary>
+        private bool TacticsAvailable =>
+            _motor != null && _motor.Mode == EnemyMotor.MotorMode.NavMesh;
+
+        private void WarnFallbackTacticsOnce()
+        {
+            if (s_fallbackTacticsWarned) return;
+            s_fallbackTacticsWarned = true;
+            Debug.LogWarning("[EnemyAI] NavMesh не запечён — укрытия и перебежки отключены, " +
+                "солдаты ведут бой на месте (режим Fallback). Запеки NavMesh для полной тактики.", this);
+        }
+
+        /// <summary>Исполнение роли, выданной координатором отряда.</summary>
+        private void ExecuteSquadRole(float distance)
+        {
+            switch (Role)
+            {
+                case SquadRole.Maneuver:
+                    ExecuteManeuverRole(distance);
+                    break;
+                case SquadRole.Cover:
+                    ExecuteCoverRole(distance);
+                    break;
+                case SquadRole.Flank:
+                    ExecuteFlankRole(distance);
+                    break;
+                default:
+                    ExecuteFireRole(distance);
+                    break;
+            }
+        }
+
+        /// <summary>
+        /// Покажет, уходит ли солдат от цели спиной (назад), если пойдёт в точку.
+        /// Боковой шаг в своё место строя разрешён: иначе отряд не расходится
+        /// и снова сбивается в кучу перед игроком.
+        /// </summary>
+        private bool WouldTurnAwayFromTarget(Vector3 destination)
+        {
+            if (_target == null) return false;
+
+            Vector3 toTarget = _target.position - transform.position;
+            Vector3 toDestination = destination - transform.position;
+            toTarget.y = 0f;
+            toDestination.y = 0f;
+
+            if (toTarget.sqrMagnitude < 0.0001f ||
+                toDestination.sqrMagnitude < 0.01f) return false;
+
+            return Vector3.Dot(toTarget.normalized, toDestination.normalized) < -0.15f;
+        }
+
+        /// <summary>Огонь: стоит на своей позиции, довёрнут на цель, стреляет.</summary>
+        private void ExecuteFireRole(float distance)
+        {
+            Vector3 anchor = UpdateCombatAnchor(distance);
+            float anchorDistance = FlatDistance(transform.position, anchor);
+
+            bool holdingFire = Time.time < _fireAnchorUntil;
+
+            // Видимая цель в боевой дистанции — стоим и стреляем: якорь в этом
+            // случае заморожен, солдат доходит до своей позиции и стоит.
+            bool visible = CanSeeCurrentTarget();
+            bool holdForShot = visible && !holdingFire && WouldTurnAwayFromTarget(anchor);
+            bool moving = false;
+
+            if (!holdingFire && !holdForShot &&
+                anchorDistance > combatAnchorTolerance)
+            {
+                // Выход на позицию — бегом.
+                _motor.SetSpeed(RunSpeed);
+                _motor.SetSprintMode(true);
+                RefreshDestination(anchor, 1f);
+                moving = true;
+            }
+            else
+            {
+                _motor.Stop();
+                _motor.SetSprintMode(false);
+            }
+
+            if (!holdForShot && (moving || _motor.CurrentSpeed > 0.3f))
+                _motor.SetAutoRotation(true);
+            else
+            {
+                _motor.SetAutoRotation(false);
+                _motor.FaceTowardsAtSpeed(_target.position, combatTurnSpeed);
+            }
+
+            // Стреляет только тот, кто держит жетон атаки (лимит на отряд).
+            if (HasFireToken) UpdateFiring(distance, _motor.CurrentSpeed, moving);
+        }
+
+        /// <summary>Манёвр: рывок на 8–12 м. Не стреляет, смотрит по ходу.</summary>
+        private void ExecuteManeuverRole(float distance)
+        {
+            Vector3 goal = SquadGoal;
+            if (FlatDistance(transform.position, goal) > 1.5f)
+            {
+                _motor.SetSpeed(RunSpeed);
+                _motor.SetSprintMode(true);
+                RefreshDestination(goal, 1f);
+                _motor.SetAutoRotation(true);
+                return;
+            }
+
+            _motor.Stop();
+            _motor.SetSprintMode(false);
+            _motor.SetAutoRotation(false);
+            _motor.FaceTowardsAtSpeed(_target.position, combatTurnSpeed);
+        }
+
+        /// <summary>Фланг: обход сбоку. На месте — держит позицию.</summary>
+        private void ExecuteFlankRole(float distance)
+        {
+            Vector3 goal = SquadGoal;
+            if (FlatDistance(transform.position, goal) > 1.5f)
+            {
+                _motor.SetSpeed(RunSpeed);
+                _motor.SetSprintMode(true);
+                RefreshDestination(goal, 1f);
+                _motor.SetAutoRotation(true);
+                return;
+            }
+
+            _motor.Stop();
+            _motor.SetSprintMode(false);
+            _motor.SetAutoRotation(false);
+            _motor.FaceTowardsAtSpeed(_target.position, combatTurnSpeed);
+        }
+
+        /// <summary>
+        /// Укрытие: дошёл до точки — прячется, потом выглядывает на 1–2 короткие
+        /// очереди (если держит жетон атаки) и снова прячется.
+        /// </summary>
+        private void ExecuteCoverRole(float distance)
+        {
+            Vector3 goal = SquadGoal;
+            if (FlatDistance(transform.position, goal) > 1.2f)
+            {
+                _motor.SetSpeed(chaseSpeed);
+                _motor.SetSprintMode(false);
+                RefreshDestination(goal, 1f);
+                _motor.SetAutoRotation(true);
+                return;
+            }
+
+            _motor.Stop();
+            _motor.SetSprintMode(false);
+            _motor.SetAutoRotation(false);
+
+            Vector3 aimPoint = _target != null ? _target.position : transform.position;
+            if (AssignedCover != null)
+                aimPoint = AssignedCover.Position + (AssignedCover.GetFacingDirection(aimPoint)) * 2f;
+            _motor.FaceTowardsAtSpeed(aimPoint, combatTurnSpeed);
+
+            if (Time.time >= _coverPeekUntil)
+            {
+                _coverPeeking = !_coverPeeking;
+                _coverPeekUntil = Time.time + (_coverPeeking
+                    ? coverPeekDuration
+                    : coverHideDuration);
+                if (_coverPeeking) _shotsRemaining = 0;
+            }
+
+            if (_coverPeeking && HasFireToken)
+                UpdateFiring(distance, 0f, false);
         }
 
         /// <summary>
@@ -1389,6 +2128,9 @@ namespace ZharkoeLeto44.AI
             if (useSquadTactics)
                 InfantrySquad.ComputeFormationSlot(this, targetPosition, right, out lateral, out depth);
 
+            // Боковой сдвиг НЕ режем: это место солдата в строю. Раньше клип
+            // 1.5 м стягивал весь отряд в узкую колонну — они бегали кучей.
+
             // 3. Дистанция до цели: держим боевую, но назад не отходим.
             float range = Mathf.Min(distance, preferredCombatDistance);
             range = Mathf.Clamp(range + depth, 1.5f, preferredCombatDistance + squadDepthSpread);
@@ -1405,12 +2147,18 @@ namespace ZharkoeLeto44.AI
                 anchor = InfantrySquad.ApplySeparation(this, anchor);
 
             // 5. Якорь догоняет цель с ограниченной скоростью.
+            //    Но если цель видна и стрелять уже можно — якорь ЗАМОРАЖИВАЕТСЯ:
+            //    солдат занимает своё место в строю и стоит, а не бесконечно
+            //    топает за уходящим якорем (и не стреляет).
+            bool holdInPlace = CanSeeCurrentTarget() &&
+                distance <= preferredCombatDistance + combatRangeSlack;
+
             if (!_hasCombatAnchor)
             {
                 _combatAnchor = anchor;
                 _hasCombatAnchor = true;
             }
-            else
+            else if (!holdInPlace)
             {
                 Vector3 delta = anchor - _combatAnchor;
                 delta.y = 0f;
@@ -1422,21 +2170,39 @@ namespace ZharkoeLeto44.AI
             return _combatAnchor;
         }
 
-        private void UpdateEngageHitTracking()
+        /// <summary>
+        /// Стадия темпа схватки — ОБЩАЯ ДЛЯ ОТРЯДА и зависящая от потерянной доли
+        /// здоровья цели (CharacterHealth.NormalizedHealth). Раньше стадия росла от
+        /// числа попаданий, а HP у всех общий — «темп» нарастал у всего отряда
+        /// одновременно и вовсе не отражал реальные потери.
+        /// Сброс: 10 с вне боя (engageResetDelay) или восстановление здоровья цели.
+        /// </summary>
+        private void UpdateEngageStage()
         {
             if (_targetHealth == null) return;
 
-            if (_targetHealth.CurrentHealth < _lastTargetHp - 0.01f)
+            // Восстановление здоровья цели — схватка начинается заново.
+            if (_lastTargetHp > 0f && _targetHealth.CurrentHealth > _lastTargetHp + 0.01f)
             {
-                _engageHits++;
-                if (debugLogging)
-                    Debug.Log($"[EnemyAI] {name}: попадание {_engageHits} по «{_target.name}» " +
-                        $"(осталось {_targetHealth.CurrentHealth:F0} HP)", this);
+                _engageStartTime = Time.time;
+                _engageOpen = true;
             }
             _lastTargetHp = _targetHealth.CurrentHealth;
+
+            int stages = pacingDamageStages != null ? pacingDamageStages.Length : 0;
+            if (stages <= 0)
+            {
+                _engageStage = 0;
+                return;
+            }
+
+            float normalized = Mathf.Clamp01(_targetHealth.NormalizedHealth);
+            _engageStage = Mathf.Clamp(Mathf.FloorToInt((1f - normalized) * stages),
+                0, stages - 1);
+            if (_engageStage > 0) _engageOpen = false;
         }
 
-        private void UpdateFiring(float distance, float selfSpeed)
+        private void UpdateFiring(float distance, float selfSpeed, bool moving)
         {
             if (weapon == null || weapon.IsReloading || Time.time < _nextBurstTime)
                 return;
@@ -1446,25 +2212,61 @@ namespace ZharkoeLeto44.AI
 
             if (distance > weapon.Range) return;
 
+            // Идёт — не стреляет: корпус смотрит по ходу, очередь ушла бы мимо.
+            if (moving || selfSpeed > 0.35f || _motor.WantsToMove) return;
+
             // Не стрелять в доводке: огонь только когда развернулся на игрока.
             // Серия не сгорает — при доводке очередь продолжится с того же места.
             if (_target != null && distance > 0.5f && !IsFacingTarget(maxFireAngle))
                 return;
 
-            if (weapon.AmmunitionInMagazine <= 0) { weapon.BeginReload(); return; }
+            // Патронов нет вообще — не стоим столбом: ждём роли/укрытия.
+            if (!weapon.HasAmmunition)
+            {
+                WantsReposition = true;
+                return;
+            }
+
+            if (weapon.AmmunitionInMagazine <= 0)
+            {
+                // Перезарядка: в укрытии или при смене роли безопаснее, но ждать нельзя.
+                weapon.BeginReload();
+                return;
+            }
+
+            // Проверка линии — только когда оружие реально готово стрелять,
+            // иначе был бы рейкаст каждый кадр на каждого стрелка.
+            if (!weapon.CanFireNow) return;
 
             if (_shotsRemaining <= 0)
             {
-                _shotsRemaining = Random.Range(minimumBurstSize, maximumBurstSize + 1);
+                if (useSquadTactics)
+                    _shotsRemaining = Random.Range(tacticalMinimumBurst, tacticalMaximumBurst + 1);
+                else
+                    _shotsRemaining = Random.Range(minimumBurstSize, maximumBurstSize + 1);
                 _burstShotIndex = 0;
             }
 
             Vector3 aimPoint = ComputeAimPoint(distance, selfSpeed);
+
+            // Перед каждым выстрелом — проверка чистой линии. Союзник на линии
+            // стрельбе не мешает: хитскан проходит сквозь своих. Блокирует только
+            // геометрия (стена/укрытие).
+            bool clearShot = weapon.HasClearShot(aimPoint, gameObject, out bool blockedByAlly);
+            _blockedByAlly = blockedByAlly;
+            if (!clearShot && !blockedByAlly)
+                return;
+
+            UpdateSpreadModel(distance, selfSpeed);
+
             weapon.DamageScale = EngageDamageScale() *
                 Random.Range(1f - pacingDamageJitter, 1f + pacingDamageJitter);
 
             if (weapon.TryFire(aimPoint, gameObject))
             {
+                // «Радио»: стреляем — значит отряд должен знать, где бой.
+                RadioContact();
+
                 if (_fireAnchorUntil < Time.time)
                     _fireAnchorUntil = Time.time +
                         squadFireAnchorDuration * Random.Range(0.9f, 1.1f);
@@ -1472,9 +2274,47 @@ namespace ZharkoeLeto44.AI
                 _shotsRemaining--;
                 _burstShotIndex++;
                 if (_shotsRemaining <= 0)
-                    _nextBurstTime = Time.time + Random.Range(minimumBurstPause, maximumBurstPause) *
-                        ((_engageHits >= 1 && _engageHits <= 2) ? midFightPauseMult : 1f);
+                {
+                    float pauseMin = useSquadTactics ? tacticalMinimumPause : minimumBurstPause;
+                    float pauseMax = useSquadTactics ? tacticalMaximumPause : maximumBurstPause;
+                    float pause = Random.Range(pauseMin, pauseMax);
+
+                    // Середина схватки — пауза длиннее (игроку дают передышку).
+                    if (_engageStage >= 1 && _engageStage <= 2) pause *= midFightPauseMult;
+                    // Раненый стреляет реже.
+                    if (_health != null && _health.NormalizedHealth <= woundedHealthThreshold)
+                        pause *= woundedFireRateScale;
+
+                    _nextBurstTime = Time.time + pause;
+                }
             }
+        }
+
+        /// <summary>
+        /// ЕДИНАЯ МОДЕЛЬ РАЗБРОСА: ИИ считает весь разброс сам и отдаёт оружию
+        /// множитель (weapon.SpreadScale). Точность растёт при непрерывной видимости
+        /// цели (2.0 → 0.8 за ~3 с) и сбрасывается при потере.
+        /// </summary>
+        private void UpdateSpreadModel(float distance, float selfSpeed)
+        {
+            if (weapon == null) return;
+
+            float meter = baseSpread + spreadPerTenMeters * (distance / 10f);
+            meter *= Mathf.Lerp(1f, movingSpreadMultiplier,
+                Mathf.Clamp01(selfSpeed / Mathf.Max(0.1f, chaseSpeed)));
+            meter *= Mathf.Lerp(1f, suppressedSpreadMultiplier, _suppression);
+            meter *= EngageSpreadScale();
+
+            float seenTime = Mathf.Max(0.01f, Time.time - _lastTargetSeenTime);
+            float settled = Mathf.Clamp01(seenTime / Mathf.Max(0.1f, spreadSettleTime));
+            meter *= Mathf.Lerp(spreadUnseenMultiplier, spreadSeenMultiplier, settled);
+
+            // Метры разброса → градусы → множитель базового разброса оружия.
+            float angle = Mathf.Atan2(meter, Mathf.Max(1f, distance)) * Mathf.Rad2Deg;
+            float baseAngle = weapon.BaseSpreadAngle;
+            weapon.SpreadScale = baseAngle > 0.01f
+                ? Mathf.Max(0.05f, angle / baseAngle)
+                : 1f;
         }
 
         /// <summary>Корпус довернулся на цель в пределах допуска (только рыскание, без тангажа).</summary>
@@ -1492,16 +2332,18 @@ namespace ZharkoeLeto44.AI
 
         private float EngageDamageScale()
         {
-            if (pacingDamageStages == null || pacingDamageStages.Length == 0) return 1f;            int index = Mathf.Min(_engageHits, pacingDamageStages.Length - 1);
+            if (pacingDamageStages == null || pacingDamageStages.Length == 0) return 1f;
+            int index = Mathf.Clamp(_engageStage, 0, pacingDamageStages.Length - 1);
             return Mathf.Max(0.05f, pacingDamageStages[index]);
         }
 
+        /// <summary>Разброс по стадии схватки: открытие → середина → концовка.</summary>
         private float EngageSpreadScale()
         {
-            if (_engageHits <= 0 && Time.time - _engageStartTime < openingDuration)
+            if (_engageOpen && _engageStage == 0 &&
+                Time.time - _engageStartTime < openingDuration)
                 return openingSpread;
-            if (_engageHits <= 2)
-                return midFightSpread;
+            if (_engageStage <= 2) return midFightSpread;
             return closingSpread;
         }
 
@@ -1512,17 +2354,11 @@ namespace ZharkoeLeto44.AI
             float lead = leadAccuracy * 0.15f;
             basePoint += _targetVelocity * lead;
             basePoint += Vector3.up * (burstClimb * Mathf.Min(1f, _burstShotIndex / 4f));
-            float spread = baseSpread + spreadPerTenMeters * (distance / 10f);
-            spread *= Mathf.Lerp(1f, movingSpreadMultiplier,
-                Mathf.Clamp01(selfSpeed / Mathf.Max(0.1f, chaseSpeed)));
-            spread *= Mathf.Lerp(1f, suppressedSpreadMultiplier, _suppression);
-            spread *= EngageSpreadScale();
 
-            Vector2 circle = Random.insideUnitCircle * spread;
-            Vector3 right = transform.right;
-            Vector3 up = Vector3.up;
-
-            return basePoint + right * circle.x + up * circle.y;
+            // Случайный разброс НЕ добавляем здесь: весь разброс считает
+            // UpdateSpreadModel и отдаёт оружию через weapon.SpreadScale —
+            // иначе разброс был бы двойным (метры у ИИ + градусы у оружия).
+            return basePoint;
         }
 
         private void GoSearchLastKnown()
@@ -1532,8 +2368,6 @@ namespace ZharkoeLeto44.AI
 
             if (_motor.HasArrived())
             {
-                ClearTarget();
-                _firstSightAcquired = false;
                 _awareness = Mathf.Min(_awareness, 0.4f);
                 _searchCenter = _lastKnownTargetPosition;
                 ChangeState(EnemyState.Search);
@@ -1544,42 +2378,195 @@ namespace ZharkoeLeto44.AI
         {
             if (debugLogging && _target != null)
                 Debug.Log($"[EnemyAI] {name}: цель «{_target.name}» {reason} — возврат в патруль.", this);
-            ClearTarget();
+            ClearTarget(reason);
             _firstSightAcquired = false;
             ChangeState(EnemyState.Patrol);
         }
 
         private void SetTarget(Transform target)
         {
+            if (target == null)
+            {
+                _target = null;
+                _targetHealth = null;
+                return;
+            }
+
             if (_target != target)
             {
                 _prevTargetPosition = target.position;
                 _targetVelocity = Vector3.zero;
+                // CharacterHealth лежит либо на самом объекте, либо выше по иерархии.
+                _targetHealth = target.GetComponentInParent<CharacterHealth>();
+                // Новую цель нельзя оценивать по LOS-кешу старой.
+                _nextLosCheckTime = 0f;
+                _cachedCanSee = false;
+                _losBlockedByAlly = false;
+                if (debugLogging)
+                    Debug.Log($"[EnemyAI] {name}: новая цель «{target.name}»", this);
             }
             _target = target;
-            _targetHealth = target.GetComponentInParent<CharacterHealth>();
         }
 
-        private void ClearTarget()
+        /// <summary>
+        /// «РАДИО» ОТРЯДА. Стреляющий солдат сообщает остальным, где цель.
+        /// Один поднял тревогу — отряд подтягивается, даже если бой не видно:
+        /// те, кто далеко, слышат стрельбу и бегут на неё.
+        /// </summary>
+        private void RadioContact()
         {
+            if (_target == null) return;
+            if (Time.time < _nextRadioTime) return;
+            _nextRadioTime = Time.time + Mathf.Max(0.2f, radioInterval);
+            NotifyAlliesOfContact(this, _target, _target.position);
+        }
+
+        /// <summary>
+        /// Передача контакта союзникам: заметивший отдаёт точку и время, союзники
+        /// в радиусе реагируют с короткой задержкой. Так один поднятый тревогу
+        /// поднимает отряд, а не весь уровень.
+        /// </summary>
+        private static void NotifyAlliesOfContact(EnemyAI spotter, Transform target, Vector3 point)
+        {
+            if (spotter == null || target == null) return;
+
+            List<EnemyAI> soldiers = s_soldiers;
+            // Радиус тревоги шире, чем радиус отряда: если рядом кто-то начал
+            // стрелять, подтягиваются ВСЕ, кто слышит — а не только соседи по строю.
+            float radius = Mathf.Max(spotter.squadAwarenessRadius, spotter.contactAlertRadius);
+            Vector3 origin = spotter.transform.position;
+
+            for (int i = 0; i < soldiers.Count; i++)
+            {
+                EnemyAI other = soldiers[i];
+                if (other == null || other == spotter) continue;
+                if (!other.IsSquadAlive || other.SquadTeam != spotter.SquadTeam) continue;
+                if (other.State == EnemyState.Dead || other.State == EnemyState.Combat) continue;
+                if (FlatDistance(origin, other.transform.position) > radius) continue;
+
+                other.ReceiveContact(target, point);
+            }
+        }
+
+        /// <summary>
+        /// Услышали стрельбу СВОЕГО. Значит рядом бой — идём на звук, даже если
+        /// ничего не видно. Так подтягиваются солдаты, стоящие далеко.
+        /// </summary>
+        private void OnAllyGunfire(CharacterHealth allyHealth, Vector3 noisePosition)
+        {
+            if (allyHealth == null || allyHealth == _health) return;
+
+            float distance = Vector3.Distance(noisePosition, transform.position);
+            if (distance > allyGunshotRadius) return;
+
+            // У кого-то из своих есть цель — бежим к ней.
+            EnemyAI ally = allyHealth.GetComponent<EnemyAI>() ??
+                allyHealth.GetComponentInParent<EnemyAI>();
+            if (ally != null && ally.State == EnemyState.Combat && ally.CurrentTarget != null)
+            {
+                ReceiveContact(ally.CurrentTarget, ally.CurrentTarget.position);
+                return;
+            }
+
+            // Иначе просто идём посмотреть, откуда стрельба.
+            if (_target != null) return;
+            _awareness = Mathf.Max(_awareness, 0.6f);
+            _suspicionPoint = noisePosition;
+            _searchCenter = noisePosition;
+            _hasSuspicion = true;
+            if (State is EnemyState.Patrol or EnemyState.Search)
+                ChangeState(EnemyState.Alert);
+        }
+
+        /// <summary>Приём контакта от союзника: цель и точка, с задержкой.</summary>
+        private void ReceiveContact(Transform target, Vector3 point)
+        {
+            if (target == null) return;
+            if (_target != null) return;   // своя цель важнее
+
+            // Задержка короткая: товарищ уже стреляет — ждать нечего.
+            float min = Mathf.Min(contactShareDelay.x, contactShareDelay.y) * contactShareDelayScale;
+            float max = Mathf.Max(contactShareDelay.x, contactShareDelay.y) * contactShareDelayScale;
+            _pendingContactTime = Time.time + Random.Range(min, max);
+            _pendingContactTarget = target;
+            _pendingContactPoint = point;
+            // Куда идти, если цель пока не видна: точка контакта.
+            _lastKnownTargetPosition = point;
+        }
+
+        private void UpdatePendingContact()
+        {
+            if (_pendingContactTime < 0f) return;
+            if (Time.time < _pendingContactTime) return;
+
+            _pendingContactTime = float.NegativeInfinity;
+            if (_target == null && _pendingContactTarget != null)
+                SetTarget(_pendingContactTarget);
+
+            // Контакт от союзника — почти полная осведомлённость: значит
+            // цель уже видна кому-то, и мы идём на неё сразу.
+            _awareness = Mathf.Max(_awareness, 0.9f);
+            _suspicionPoint = _pendingContactPoint;
+            _searchCenter = _pendingContactPoint;
+            // Точка, откуда контакт — цель для погони. Без этого солдат бежал
+            // в последнюю известную точку (а у нового солдата это вообще ноль).
+            _lastKnownTargetPosition = _pendingContactPoint;
+            _hasSuspicion = true;
+            _pendingContactTarget = null;
+
+            if (voice != null) voice.PlayAlert();
+
+            if (_target == null) ChangeState(EnemyState.Alert);
+            else ChangeState(EnemyState.Chase);
+        }
+
+        private void ClearTarget(string reason = null)
+        {
+            if (DiagEnabled && !string.IsNullOrEmpty(reason))
+                _lastTargetLossReason = reason;
             _target = null;
             _targetHealth = null;
             _targetVelocity = Vector3.zero;
             _prevTargetPosition = Vector3.zero;
+            _targetVisibleLastTick = false;
+            // Сброс LOS-кеша: иначе после потери цели новый таргет
+            // 0.1-0.2 сек считается невидимым по старому результату.
+            _nextLosCheckTime = 0f;
+            _cachedCanSee = false;
+            _losBlockedByAlly = false;
+            if (_health != null && _health.IsAlive) _targetLostTime = Time.time;
         }
 
+        /// <summary>
+        /// Видна ли цель СЕЙЧАС. Результат кешируется на ~0.1 с (со случайным сдвигом
+        /// на солдата): раньше проверка шла каждый кадр из Chase/Combat — это 1–2 луча
+        /// + OverlapSphere + поиск компонентов на КАЖДОГО солдата каждый кадр.
+        /// </summary>
         private bool CanSeeCurrentTarget()
         {
             if (_target == null) return false;
 
+            if (Time.time < _nextLosCheckTime) return _cachedCanSee;
+            _nextLosCheckTime = Time.time + _losCheckInterval;
+
             Vector3 chest = GetTargetAimPoint(_target);
             Vector3 toTarget = chest - eyePoint.position;
-            if (toTarget.sqrMagnitude > viewDistance * viewDistance) return false;
+            if (toTarget.sqrMagnitude > viewDistance * viewDistance)
+            {
+                _cachedCanSee = false;
+                _losBlockedByAlly = false;
+                return false;
+            }
 
-            bool visible = HasLineOfSight(_target, chest);
+            bool visible = HasLineOfSight(_target, chest, out _losBlockedByAlly);
             if (!visible)
-                visible = HasLineOfSight(_target, chest + Vector3.up * 0.55f);
+            {
+                bool ally;
+                visible = HasLineOfSight(_target, chest + Vector3.up * 0.55f, out ally);
+                if (ally) _losBlockedByAlly = true;
+            }
 
+            _cachedCanSee = visible;
             if (visible)
             {
                 _lastKnownTargetPosition = _target.position;
@@ -1593,11 +2580,45 @@ namespace ZharkoeLeto44.AI
         {
             if (target == null) return transform.position;
 
-            var controller = target.GetComponentInParent<CharacterController>();
-            if (controller != null) return controller.bounds.center;
+            CharacterHealth health = target.GetComponentInParent<CharacterHealth>();
+            if (health != null) return GetTargetAimPoint(health);
 
             var col = target.GetComponentInChildren<Collider>();
             return col != null ? col.bounds.center : target.position + Vector3.up * 1.4f;
+        }
+
+        /// <summary>
+        /// Точка прицеливания по персонажу (центр груди). Кешируем ССЫЛКИ на
+        /// CharacterController/Collider (они стабильны), но не саму точку — персонаж
+        /// двигается, точка должна считаться каждый раз заново.
+        /// </summary>
+        private Vector3 GetTargetAimPoint(CharacterHealth health)
+        {
+            if (health == null) return transform.position;
+
+            int index = FindAimCacheSlot(health);
+            if (index < 0)
+            {
+                index = _aimCacheCursor;
+                _aimCacheCursor = (_aimCacheCursor + 1) % _aimCache.Length;
+
+                Transform root = health.transform;
+                _aimCache[index].Health = health;
+                _aimCache[index].Controller = root.GetComponentInParent<CharacterController>();
+                _aimCache[index].Collider = root.GetComponentInChildren<Collider>();
+            }
+
+            ref AimCacheEntry entry = ref _aimCache[index];
+            if (entry.Controller != null) return entry.Controller.bounds.center;
+            if (entry.Collider != null) return entry.Collider.bounds.center;
+            return health.transform.position + Vector3.up * 1.4f;
+        }
+
+        private int FindAimCacheSlot(CharacterHealth health)
+        {
+            for (int i = 0; i < _aimCache.Length; i++)
+                if (_aimCache[i].Health == health) return i;
+            return -1;
         }
 
         private void RefreshDestination(Vector3 destination, float minShift = 0.6f)
@@ -1632,11 +2653,13 @@ namespace ZharkoeLeto44.AI
             return Vector3.Distance(a, b);
         }
 
-        private void ChangeState(EnemyState newState)
+        private void ChangeState(EnemyState newState,
+            [System.Runtime.CompilerServices.CallerMemberName] string reason = null)
         {
             if (State == EnemyState.Dead || State == newState) return;
             EnemyState previous = State;
             State = newState;
+            if (DiagEnabled) _lastStateChangeReason = reason;
             CancelLookAround();
             if (newState != EnemyState.Combat)
             {
@@ -1646,11 +2669,13 @@ namespace ZharkoeLeto44.AI
             }
             if (newState == EnemyState.Combat && previous != EnemyState.Combat)
             {
+                // Новая схватка (другая цель или долго не дрались) — темп с нуля.
                 if (_target == null || _target != _engageTarget ||
-                    Time.time - _engageEndTime > 10f)
+                    Time.time - _engageEndTime > engageResetDelay)
                 {
                     _engageTarget = _target;
-                    _engageHits = 0;
+                    _engageStage = 0;
+                    _engageOpen = true;
                     _engageStartTime = Time.time;
                     _lastTargetHp = _targetHealth != null ? _targetHealth.CurrentHealth : 0f;
                 }
@@ -1665,6 +2690,7 @@ namespace ZharkoeLeto44.AI
             bool aiming = newState is EnemyState.Combat;
             if (enemyAnimator != null) enemyAnimator.SetAiming(aiming);
             SafeSetBool(IsAimingHash, aiming);
+            _motor.SetManualRotation(false);
             _motor.SetAutoRotation(!aiming);
 
             switch (newState)
@@ -1678,46 +2704,74 @@ namespace ZharkoeLeto44.AI
                     break;
 
                 case EnemyState.Alert:
-                    _motor.SetSpeed(chaseSpeed * 0.8f);
+                    _motor.SetSpeed(alertSpeed);
+            _motor.SetSprintMode(false);
                     if (previous == EnemyState.Patrol && voice != null) voice.PlayAlert();
                     break;
 
                 case EnemyState.Search:
                     _motor.SetSpeed(patrolSpeed);
+                    _motor.Stop();
                     _searchFaceUntil = Time.time + 1.2f;
                     _searchBaseCaptured = false;
                     _searchUntil = Time.time + Mathf.Max(4f, targetMemoryDuration);
+                    BuildSearchPoints();
                     break;
 
                 case EnemyState.Chase:
                     _motor.SetSpeed(chaseSpeed);
                     _chaseStuckTime = -1f;
                     if (previous is EnemyState.Patrol or EnemyState.Alert or EnemyState.Search)
+                    {
                         if (voice != null) voice.PlaySpotted();
+                        // Передаём контакт союзникам: они подтянутся через 0.3–1 с.
+                        if (_target != null)
+                            NotifyAlliesOfContact(this, _target, _target.position);
+                    }
                     break;
 
                 case EnemyState.Combat:
                     _lastVisibleTime = Time.time;
                     if (previous is EnemyState.Patrol or EnemyState.Alert or EnemyState.Search)
+                    {
                         if (voice != null) voice.PlaySpotted();
+                        // Начали стрелять — поднимаем всех, кто рядом: отряд
+                        // подтягивается на игрока, а не топчется по местам.
+                        if (_target != null)
+                            NotifyAlliesOfContact(this, _target, _target.position);
+                    }
                     break;
             }
         }
 
         private void OnNoiseCreated(NoiseSystem.Noise noise)
         {
-            if (!_health.IsAlive || State == EnemyState.Dead) return;
+            if (_health == null || !_health.IsAlive) return;
+            if (State == EnemyState.Dead) return;
 
-            float hearingRadius = noise.Radius * Mathf.Max(1f, hearingRadiusMultiplier);
+            // ВЕРХНЯЯ ГРАНИЦА слышимости: выстрел ИИ = 35*4 = 140 м, *1.5 = 210 м —
+            // такой радиус поднимал весь уровень от одного выстрела. Теперь потолок
+            // maxHearingDistance (по умолчанию 140 м) решает, а не радиус шума.
+            float hearingRadius = Mathf.Min(
+                noise.Radius * Mathf.Max(1f, hearingRadiusMultiplier),
+                Mathf.Max(1f, maxHearingDistance));
             float distance = Vector3.Distance(noise.Position, transform.position);
             if (distance > hearingRadius) return;
 
             if (noise.Source != null)
             {
-                if (noise.Source.GetComponentInParent<CharacterHealth>() == _health) return;
-
-                var srcHealth = noise.Source.GetComponentInParent<CharacterHealth>();
-                if (srcHealth != null && srcHealth.Team == _health.Team) return;
+                CharacterHealth srcHealth = noise.Source.GetComponentInParent<CharacterHealth>();
+                if (srcHealth == _health) return;
+                if (srcHealth != null && srcHealth.Team == _health.Team)
+                {
+                    // Свой стреляет — рядом бой. Идём на звук, даже если бой
+                    // не видно: так далёкие солдаты подтягиваются к файту.
+                    // Тихие звуки (шаги, попадания) игнорируем — иначе солдат
+                    // бежал бы к ногам соседа.
+                    if (noise.Radius >= allyNoiseMinRadius)
+                        OnAllyGunfire(srcHealth, noise.Position);
+                    return;
+                }
             }
 
             float falloff = 1f - Mathf.Clamp01(distance / hearingRadius);
@@ -1725,13 +2779,24 @@ namespace ZharkoeLeto44.AI
                 Mathf.Max(0.1f, hearingSensitivity));
             if (heard < hearingThreshold) return;
 
-            _awareness = Mathf.Min(0.9f, _awareness + heard * 0.75f);
-            _suspicionPoint = noise.Position;
-            _searchCenter = noise.Position;
+            // Ошибка позиции: враг идёт в РАЙОН шума, а не в точку. ~8 % от дистанции.
+            Vector3 heardPosition = noise.Position;
+            if (hearingPositionErrorRatio > 0f && distance > 1f)
+            {
+                float error = distance * Mathf.Clamp(hearingPositionErrorRatio, 0f, 0.5f);
+                heardPosition += new Vector3(
+                    Random.Range(-error, error), 0f, Random.Range(-error, error));
+            }
+
+            // Услышали — сразу реагируем: осведомлённость растёт быстро, солдат
+            // бежит на звук (Alert) ищет источник.
+            _awareness = Mathf.Min(0.95f, _awareness + heard * 0.95f);
+            _suspicionPoint = heardPosition;
+            _searchCenter = heardPosition;
             _hasSuspicion = true;
             _lastNoiseInfo = $"шум {distance:F0}м (громк. {heard:P0})";
             if (falloff > 0.5f)
-                _motor.FaceTowardsAtSpeed(noise.Position, 90f);
+                _motor.FaceTowardsAtSpeed(heardPosition, 90f);
 
             if (debugLogging && _target == null)
                 Debug.Log($"[EnemyAI] {name}: услышал {_lastNoiseInfo} (aware={_awareness:F2})", this);
@@ -1764,7 +2829,7 @@ namespace ZharkoeLeto44.AI
             if (damage.Attacker != null)
             {
                 var attackerHealth = damage.Attacker.GetComponentInParent<CharacterHealth>();
-                if (attackerHealth != null && attackerHealth.IsAlive && attackerHealth.Team != enemyTeam)
+                if (attackerHealth != null && attackerHealth.IsAlive && attackerHealth.Team != OwnTeam)
                 {
                     SetTarget(attackerHealth.transform);
                     _lastKnownTargetPosition = attackerHealth.transform.position;
@@ -1787,6 +2852,14 @@ namespace ZharkoeLeto44.AI
         private void OnDied(DamageInfo damage)
         {
             State = EnemyState.Dead;
+
+            // Укрытие освобождаем — следующий солдат должен им воспользоваться.
+            if (AssignedCover != null)
+            {
+                AssignedCover.Release(this);
+                AssignedCover = null;
+            }
+            HasFireToken = false;
 
             if (voice != null) voice.PlayDeath();
             if (loadout != null) loadout.HandleOwnerDeath();
@@ -1825,7 +2898,10 @@ namespace ZharkoeLeto44.AI
             // но только если параметры реально существуют (иначе был спам ошибок).
             if (enemyAnimator != null)
             {
-                enemyAnimator.SetLocomotion(speed, _motor.WantsToMove);
+                // Скорость слалась в м/с напрямую — Blend Tree под 0..1 улетал в потолок.
+                // EnemyAnimator сам раскладывает м/с по якорям; legacy-путь шлём как есть,
+                // но только если параметры реально существуют (иначе был спам ошибок).
+                enemyAnimator.SetLocomotion(_motor.Velocity, _motor.WantsToMove, speed);
                 return;
             }
             if (animator == null) return;
@@ -1855,7 +2931,10 @@ namespace ZharkoeLeto44.AI
             UnsubscribeWeapon(weapon);
         }
 
-#if UNITY_EDITOR
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        private string _overlayLabel;
+        private float _nextOverlayBuildTime;
+
         private void OnDrawGizmosSelected()
         {
             Transform origin = eyePoint != null ? eyePoint : transform;
@@ -1930,6 +3009,8 @@ namespace ZharkoeLeto44.AI
                         Gizmos.DrawWireSphere(_combatAnchor, 0.3f);
                     }
                 }
+
+                DrawTacticsGizmos();
             }
 
             if (targetMask == 0)
@@ -1937,6 +3018,89 @@ namespace ZharkoeLeto44.AI
                 Gizmos.color = Color.red;
                 Gizmos.DrawWireSphere(transform.position, 0.5f);
             }
+        }
+
+        /// <summary>Гизмо тактики: роль, жетон, цель отряда, укрытие, точки поиска.</summary>
+        private void DrawTacticsGizmos()
+        {
+            // Роль: цвет головы.
+            Color roleColor = Role switch
+            {
+                SquadRole.Fire => new Color(1f, 0.25f, 0.2f),
+                SquadRole.Maneuver => new Color(1f, 0.85f, 0.2f),
+                SquadRole.Cover => new Color(0.3f, 0.8f, 1f),
+                SquadRole.Flank => new Color(0.8f, 0.4f, 1f),
+                _ => Color.gray
+            };
+            Gizmos.color = roleColor;
+            Gizmos.DrawWireSphere(transform.position + Vector3.up * 2.1f, 0.12f);
+
+            // Жетон атаки.
+            if (HasFireToken)
+            {
+                Gizmos.color = new Color(0.2f, 1f, 0.3f);
+                Gizmos.DrawWireCube(transform.position + Vector3.up * 2.35f, Vector3.one * 0.16f);
+            }
+
+            // Цель отряда (куда идёт/куда стреляет).
+            if (Role == SquadRole.Maneuver || Role == SquadRole.Flank || Role == SquadRole.Cover)
+            {
+                Gizmos.color = new Color(1f, 0.6f, 0.1f, 0.9f);
+                Gizmos.DrawLine(transform.position + Vector3.up * 0.1f, SquadGoal);
+                Gizmos.DrawWireSphere(SquadGoal, 0.35f);
+            }
+
+            // Укрытие.
+            if (AssignedCover != null)
+            {
+                Gizmos.color = new Color(0.2f, 0.7f, 1f);
+                Gizmos.DrawLine(transform.position + Vector3.up * 0.1f, AssignedCover.Position);
+                Gizmos.DrawWireSphere(AssignedCover.Position, 0.5f);
+            }
+
+            // Точки поиска.
+            for (int i = 0; i < _searchPointTotal; i++)
+            {
+                Gizmos.color = new Color(0.9f, 0.9f, 0.2f, 0.7f);
+                Gizmos.DrawWireSphere(_searchPoints[i], 0.4f);
+            }
+        }
+
+        /// <summary>Экранная отладка: состояние, роль, жетон, цель.</summary>
+        private void OnGUI()
+        {
+            if (!debugOverlay) return;
+
+            if (Time.unscaledTime >= _nextOverlayBuildTime)
+            {
+                _nextOverlayBuildTime = Time.unscaledTime + 0.25f;
+                _overlayLabel = BuildOverlayLabel();
+            }
+            if (string.IsNullOrEmpty(_overlayLabel)) return;
+
+            Camera cam = Camera.main;
+            if (cam == null) return;
+
+            Vector3 screen = cam.WorldToScreenPoint(transform.position + Vector3.up * 2.3f);
+            if (screen.z <= 0f) return;
+
+            GUI.Label(new Rect(screen.x - 280f, Screen.height - screen.y - 20f, 720f, 20f),
+                _overlayLabel);
+        }
+
+        private string BuildOverlayLabel()
+        {
+            string role = Role.ToString();
+            string token = HasFireToken ? "жетон" : "—";
+            string target = _target != null ? _target.name : "—";
+            string notSeen = _lastNotSeenReason ?? "—";
+            string loss = _lastTargetLossReason ?? "—";
+            string changed = _lastStateChangeReason ?? "—";
+            string note = _lastRejectNote ?? "—";
+
+            return $"{State} | aware {_awareness:F2}/1.00 | роль {role} | {token} | " +
+                   $"цель {target} | не вижу: {notSeen} | потеря: {loss} | смена: {changed} | " +
+                   $"фильтр: {note}";
         }
 #endif
     }

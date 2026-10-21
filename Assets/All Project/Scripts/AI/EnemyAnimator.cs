@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Animations;
 using UnityEngine.Playables;
@@ -8,13 +7,25 @@ namespace ZharkoeLeto44.AI
     /// <summary>
     /// Проигрыватель анимаций врага БЕЗ AnimatorController.
     /// Перетащи AnimationClip'ы в инспектор — скрипт сам склеит их через PlayableGraph:
-    /// idle/walk/run/sprint смешиваются по скорости, shoot/reload/hit/death — поверх одним слоем.
-    /// Управляется из EnemyAI (SetLocomotion / PlayShoot / PlayReload / PlayHit / PlayDeath).
+    /// idle/walk/run/sprint смешиваются по скорости, shoot/reload/hit/death — поверх отдельным слоем.
+    /// Верхний слой умеет работать по AvatarMask (только верх тела), есть прицельные позы
+    /// (aimIdle/aimWalk) и опциональные стрейф-клипы.
+    /// Управляется из EnemyAI (SetLocomotion / SetAiming / PlayShoot / PlayReload / PlayHit / PlayDeath).
     /// Все клипы необязательны: чего нет — то молча пропускается, ошибок в консоли не будет.
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class EnemyAnimator : MonoBehaviour
     {
+        private enum StrafeKind { None, Left, Right, Back }
+
+        private const int LocoSlots = 7;   // idle, walk, run, sprint, strafeL, strafeR, back
+        private const int ActionLayer = 1; // слой: выстрел/перезарядка/попадание (по маске)
+        private const int DeathLayer = 2;  // слой: смерть (всё тело)
+        private const int AimIdleLayer = 3;// слой: прицельная поза стоя (по маске)
+        private const int AimWalkLayer = 4;// слой: прицельная поза на ходу (по маске)
+        private const int StandLayer = 5;  // слой: поза «стоит и ждёт» (клип из инспектора)
+        private const int LayerCount = 6;
+
         [Header("Ссылки")]
         [Tooltip("Animator модели врага. ТОЛЬКО ВРУЧНУЮ через инспектор — автопоиск ОТКЛЮЧЁН. " +
                  "Перетащи сюда Animator именно модели. " +
@@ -34,11 +45,32 @@ namespace ZharkoeLeto44.AI
         [SerializeField] private AnimationClip runClip;
         [SerializeField] private AnimationClip sprintClip;
 
+        [Header("Опциональные клипы стрейфа")]
+        [Tooltip("Клип шага влево. Без него боковой шаг не используется.")]
+        [SerializeField] private AnimationClip strafeLeftClip;
+        [Tooltip("Клип шага вправо. Без него боковой шаг не используется.")]
+        [SerializeField] private AnimationClip strafeRightClip;
+        [Tooltip("Клип шага назад. Без него шаг назад не используется.")]
+        [SerializeField] private AnimationClip walkBackClip;
+
+        [Header("Прицельные позы (верх тела)")]
+        [Tooltip("Поза прицеливания стоя. Играет, пока солдат в бою. Без неё — обычное idle.")]
+        [SerializeField] private AnimationClip aimIdleClip;
+        [Tooltip("Поза прицеливания на ходу. Без неё во время хода — обычная локомоция.")]
+        [SerializeField] private AnimationClip aimWalkClip;
+
+        [Header("Маска верхнего тела")]
+        [Tooltip("AvatarMask для клипов выстрела/перезарядки/попадания и прицельных поз. " +
+                 "Если задан — эти клипы играют только верхом тела, ноги продолжают локомоцию. " +
+                 "Смерть всегда играет всем телом.")]
+        [SerializeField] private AvatarMask upperBodyMask;
+
         [Header("На какой скорости какой клип (м/с)")]
-        [Tooltip("Якорь ходьбы. Держи равным Patrol Speed из EnemyAI.")]
+        [Tooltip("Якорь ходьбы. Задаётся из EnemyAI (ConfigureSpeedAnchors) по реальной скорости патруля.")]
         [SerializeField, Min(0.1f)] private float walkAnchorSpeed = 1.8f;
-        [Tooltip("Якорь бега. Держи равным Chase Speed из EnemyAI.")]
+        [Tooltip("Якорь бега. Задаётся из EnemyAI по реальной скорости погони.")]
         [SerializeField, Min(0.1f)] private float runAnchorSpeed = 3.8f;
+        [Tooltip("Якорь спринта. Задаётся из EnemyAI по реальной скорости перебежки.")]
         [SerializeField, Min(0.1f)] private float sprintAnchorSpeed = 5f;
         [Tooltip("Ниже этой скорости считаемся стоящими.")]
         [SerializeField, Min(0f)] private float idleMaxSpeed = 0.25f;
@@ -56,6 +88,10 @@ namespace ZharkoeLeto44.AI
 
         [Header("Экшен-клипы (необязательно — можно оставить пустыми)")]
         [SerializeField] private AnimationClip shootClip;
+        [Tooltip("Короткая отдача во время очереди. Если задан — выстрел играет один раз " +
+                 "за очередь, а повторные выстрелы дают короткий отскок. Без него клип " +
+                 "выстрела не перезапускается во время очереди (прицельная поза держится).")]
+        [SerializeField] private AnimationClip shootRecoilClip;
         [SerializeField] private AnimationClip reloadClip;
         [SerializeField] private AnimationClip hitClip;
 
@@ -78,21 +114,51 @@ namespace ZharkoeLeto44.AI
         public bool HasLocomotion =>
             idleClip != null || walkClip != null || runClip != null || sprintClip != null;
 
+        /// <summary>Есть ли клипы бокового/заднего шага (без них боковой шаг запрещён).</summary>
+        public bool HasStrafeClips =>
+            strafeLeftClip != null || strafeRightClip != null || walkBackClip != null;
+
+        /// <summary>Есть ли прицельные позы (иначе SetAiming ничего не меняет).</summary>
+        public bool HasAimClips => aimIdleClip != null || aimWalkClip != null;
+
         private PlayableGraph _graph;
         private AnimationMixerPlayable _locoMixer;
         private AnimationLayerMixerPlayable _layerMixer;
-        private readonly AnimationClipPlayable[] _locoPlayables = new AnimationClipPlayable[4];
+        private readonly AnimationClipPlayable[] _locoPlayables = new AnimationClipPlayable[LocoSlots];
         private AnimationClipPlayable _actionPlayable;
-        private readonly float[] _weights = new float[4];
-        private readonly float[] _targets = new float[4];
+        private AnimationClipPlayable _aimIdlePlayable;
+        private AnimationClipPlayable _aimWalkPlayable;
+        private readonly float[] _weights = new float[LocoSlots];
+        private readonly float[] _targets = new float[LocoSlots];
+
+        // Слой позы ожидания (стоит и ждёт): клип из инспектора поверх локомоции.
+        private AnimationClipPlayable _standPlayable;
+        private AnimationClip _standClip;
+        private float _standWeight;
+        private float _standTargetWeight;
+        private float _standTime;
+        private float _standLength;
+
+        // Кеш якорей и клипов локомоции: раньше ComputeTargets создавал два массива
+        // НА КАЖДЫЙ КАДР (2 аллокации на солдата на кадр).
+        private readonly float[] _anchorCache = new float[LocoSlots];
+        private readonly AnimationClip[] _clipCache = new AnimationClip[LocoSlots];
 
         private float _speed;
         private bool _moveIntent;
         private bool _aiming;
         private bool _dead;
         private bool _graphReady;
+        private StrafeKind _strafe = StrafeKind.None;
 
-        private readonly Dictionary<Transform, Vector3> _bindScales = new();
+        // Гистерезис idle <-> move: без него микрошаги мерцали idle/walk.
+        private bool _movingState;
+        private float _moveStateHoldUntil;
+
+        // Кеш bind-масштабов в массивах: Dictionary обходился каждый LateUpdate.
+        private Transform[] _bindTransforms = new Transform[64];
+        private Vector3[] _bindScales = new Vector3[64];
+        private int _bindCount;
         private bool _warnedScaleDrift;
 
         private float _actionTime;
@@ -100,8 +166,15 @@ namespace ZharkoeLeto44.AI
         private float _actionWeight;
         private float _actionTargetWeight;
         private bool _actionHoldAtEnd;
+        private int _actionLayer = ActionLayer;
+        private AnimationClip _actionClipInUse;
+
+        private float _aimWeight;
+        private float _aimIdleWeight;
+        private float _aimWalkWeight;
 
         private float _nextShootTime;
+        private float _nextRecoilTime;
         private float _nextHitTime;
         private bool _tippedOver;
         private AnimationClip _deathClipInUse;
@@ -133,6 +206,7 @@ namespace ZharkoeLeto44.AI
             CacheBindScales();
             if (runAnchorSpeed <= walkAnchorSpeed) runAnchorSpeed = walkAnchorSpeed + 0.5f;
             if (sprintAnchorSpeed <= runAnchorSpeed) sprintAnchorSpeed = runAnchorSpeed + 0.5f;
+            RefreshClipCache();
         }
 
         private void OnEnable()
@@ -182,39 +256,155 @@ namespace ZharkoeLeto44.AI
                 BuildGraph();
         }
 
+        /// <summary>
+        /// ЕДИНЫЙ ИСТОЧНИК СКОРОСТЕЙ: EnemyAI передаёт реальные скорости своих
+        /// состояний (патруль / погоня / перебежка), и якоря анимации совпадают с ними.
+        /// Без этого клип бега крутился на скорости патруля — ноги скользили.
+        /// </summary>
+        public void ConfigureSpeedAnchors(float walkSpeed, float runSpeed, float sprintSpeed)
+        {
+            walkAnchorSpeed = Mathf.Max(0.1f, walkSpeed);
+            runAnchorSpeed = Mathf.Max(walkAnchorSpeed + 0.1f, runSpeed);
+            sprintAnchorSpeed = Mathf.Max(runAnchorSpeed + 0.1f, sprintSpeed);
+            RefreshClipCache();
+        }
+
         /// <summary>Вызывается из EnemyAI каждый кадр: текущая скорость м/с + есть ли приказ двигаться.
-        /// ДВИЖЕНИЕ = АНИМАЦИЯ: если isMoving=true, idle запрещён — играет slowest locomotion
+        /// ДВИЖЕНИЕ = АНИМАЦИЯ: если isMoving=true, idle запрещён — играет locomotion
         /// даже когда замеренная скорость на этом кадре 0 (разгон/доворот/первый кадр).</summary>
         public void SetLocomotion(float speed, bool isMoving)
         {
+            _strafe = StrafeKind.None;
+            ApplyLocomotion(speed, isMoving);
+        }
+
+        /// <summary>
+        /// Перегрузка с направлением движения: по мировой скорости определяется
+        /// боковой/задний шаг (если есть соответствующие клипы). Без клипов стрейфа
+        /// поведение не отличается от обычного SetLocomotion.
+        /// </summary>
+        public void SetLocomotion(Vector3 worldVelocity, bool isMoving, float speed)
+        {
+            _strafe = StrafeKind.None;
+            float magnitude = speed;
+            if (isMoving && magnitude > 0.2f && HasStrafeClips)
+            {
+                Vector3 local = transform.InverseTransformDirection(worldVelocity);
+                if (local.z < -0.4f * magnitude) _strafe = StrafeKind.Back;
+                else if (local.x > 0.4f * magnitude) _strafe = StrafeKind.Right;
+                else if (local.x < -0.4f * magnitude) _strafe = StrafeKind.Left;
+            }
+            ApplyLocomotion(magnitude, isMoving);
+        }
+
+        private void ApplyLocomotion(float speed, bool isMoving)
+        {
             _speed = Mathf.Max(0f, speed);
             _moveIntent = isMoving;
+            UpdateMoveState(_speed, isMoving);
         }
 
-        /// <summary>Совместимость: без флага приказа — приказ выводится из порога idle.</summary>
-        public void SetLocomotion(float speed)
+        /// <summary>
+        /// Гистерезис idle <-> move: порог входа в «иду» и порог выхода в «стою» разные,
+        /// плюс короткая задержка. Без этого микрошаги (0.2–0.3 м/с) мерцали
+        /// idle/walk каждый кадр.
+        /// </summary>
+        private void UpdateMoveState(float speed, bool isMoving)
         {
-            SetLocomotion(speed, speed > idleMaxSpeed);
+            float enter = idleMaxSpeed * 0.8f;
+            float exit = idleMaxSpeed * 1.35f;
+
+            if (isMoving || speed > enter)
+            {
+                if (!_movingState)
+                {
+                    _movingState = true;
+                    _moveStateHoldUntil = Time.time + 0.2f;
+                }
+                return;
+            }
+
+            if (_movingState && speed < exit && Time.time >= _moveStateHoldUntil)
+                _movingState = false;
         }
 
-        /// <summary>Вызывается из EnemyAI при смене состояния (пока только запоминается).</summary>
+        /// <summary>Вызывается из EnemyAI при смене состояния: пока солдат в бою —
+        /// держим прицельную позу (если есть клипы aimIdle/aimWalk).</summary>
         public void SetAiming(bool aiming)
         {
             _aiming = aiming;
         }
+
+        /// <summary>
+        /// Поза «стоит и ждёт»: клип играет отдельным слоем поверх локомоции, пока
+        /// поза не снята (ClearStandPose). Клип с Loop Time играет по кругу, без Loop Time —
+        /// замирает на последнем кадре. Нужен для сцен, где солдат стоит и ждёт
+        /// (немец у двери), но ИИ выключен и локомоция не управляется.
+        /// </summary>
+        public bool PlayStandPose(AnimationClip clip)
+        {
+            if (clip == null) { ClearStandPose(); return false; }
+            if (_dead) return false;
+            if (_standClip == clip && _standPlayable.IsValid()) return true;
+
+            DestroyStandPlayable();
+
+            _standClip = clip;
+            _standTargetWeight = 1f;
+
+            if (!_graphReady || !_graph.IsValid())
+            {
+                // Граф ещё не собран (нет клипов локомоции) — клип подхватится при сборке.
+                return false;
+            }
+
+            CreateStandPlayable();
+            return _standPlayable.IsValid();
+        }
+
+        /// <summary>Снять позу ожидания: снова обычная локомоция.</summary>
+        public void ClearStandPose()
+        {
+            _standTargetWeight = 0f;
+            _standClip = null;
+        }
+
+        /// <summary>Идёт ли сейчас поза ожидания.</summary>
+        public bool HasStandPose => _standClip != null;
 
         public void PlayShoot()
         {
             if (_dead || shootClip == null) return;
             if (Time.time < _nextShootTime) return;
             _nextShootTime = Time.time + Mathf.Max(0.05f, shootAnimCooldown);
-            StartAction(shootClip, holdAtEnd: false);
+            StartAction(shootClip, holdAtEnd: false, layer: ActionLayer);
+        }
+
+        /// <summary>
+        /// Повторный выстрел в очереди: полную анимацию выстрела НЕ перезапускаем
+        /// (иначе она дёргалась каждые 0.28 с и «ломала» прицельную позу).
+        /// Если задан отдельный клип отдачи — играем его, иначе не делаем ничего.
+        /// </summary>
+        public void PlayShootRecoil()
+        {
+            if (_dead) return;
+
+            if (shootRecoilClip != null)
+            {
+                if (Time.time < _nextRecoilTime) return;
+                _nextRecoilTime = Time.time + Mathf.Max(0.05f, shootAnimCooldown);
+                StartAction(shootRecoilClip, holdAtEnd: false, layer: ActionLayer);
+                return;
+            }
+
+            // Клипа отдачи нет — удерживаем текущую анимацию выстрела, не перезапуская её.
+            if (_actionPlayable.IsValid() && _actionClipInUse == shootClip) return;
         }
 
         public void PlayReload()
         {
             if (_dead || reloadClip == null) return;
-            StartAction(reloadClip, holdAtEnd: false);
+            StartAction(reloadClip, holdAtEnd: false, layer: ActionLayer);
         }
 
         public void PlayHit()
@@ -222,19 +412,20 @@ namespace ZharkoeLeto44.AI
             if (_dead || hitClip == null) return;
             if (Time.time < _nextHitTime) return;
             _nextHitTime = Time.time + Mathf.Max(0.05f, hitAnimCooldown);
-            StartAction(hitClip, holdAtEnd: false);
+            StartAction(hitClip, holdAtEnd: false, layer: ActionLayer);
         }
 
         public void PlayDeath()
         {
             if (_dead) return;
             _dead = true;
+            _aiming = false;
             // Запоминаем ВЫБРАННЫЙ клип: если экшен позже потеряется (пересборка графа),
             // долежим ТОТ ЖЕ клип, а не кинем рандом заново (иначе труп дёргается).
             _deathClipInUse = SelectDeathClip();
             if (_deathClipInUse != null)
             {
-                StartAction(_deathClipInUse, holdAtEnd: true);
+                StartAction(_deathClipInUse, holdAtEnd: true, layer: DeathLayer);
                 return;
             }
             if (tipOverOnDeathWithoutClip && !_tippedOver)
@@ -265,18 +456,28 @@ namespace ZharkoeLeto44.AI
             int slowest = SlowestAvailableIndex();
 
             float k = Mathf.Min(1f, blendResponsiveness * dt);
-            for (int i = 0; i < 4; i++)
+            for (int i = 0; i < LocoSlots; i++)
             {
                 _weights[i] += (_targets[i] - _weights[i]) * k;
                 if (Mathf.Abs(_targets[i] - _weights[i]) < 0.001f) _weights[i] = _targets[i];
                 _locoMixer.SetInputWeight(i, _dead ? 0f : _weights[i]);
 
                 var p = _locoPlayables[i];
-                if (p.IsValid())
-                    p.SetSpeed(_dead || (standingWithoutIdle && i == slowest) ? 0f : 1f);
+                if (!p.IsValid()) continue;
+
+                // Масштаб проигрывания = фактическая скорость / якорь клипа (0.8–1.2):
+                // ноги не скользят, когда солдат идёт быстрее «своего» клипа.
+                float scale = 1f;
+                if (i >= 1 && _anchorCache[i] > 0.01f)
+                    scale = Mathf.Clamp(_speed / _anchorCache[i], 0.8f, 1.2f);
+                if (standingWithoutIdle && i == slowest) scale = 0f;
+
+                p.SetSpeed(_dead ? 0f : scale);
             }
 
             UpdateAction(dt);
+            UpdateAim(dt);
+            UpdateStand(dt);
 
             // БАГФИКС «встаёт после смерти»: если экшен смерти потерян (пересборка графа,
             // вкл/выкл объекта), локомоция с нулевыми весами показывает bind-стойку.
@@ -288,38 +489,141 @@ namespace ZharkoeLeto44.AI
             if (lockScales) RestoreBindScales();
         }
 
+        /// <summary>Прицельная поза: вес нарастает, пока солдат в бою (SetAiming).</summary>
+        private void UpdateAim(float dt)
+        {
+            if (!_layerMixer.IsValid()) return;
+
+            bool aiming = _aiming && !_dead && HasAimClips;
+            bool moving = _movingState || _moveIntent;
+
+            float target = aiming ? (_actionWeight > 0.01f ? 0.5f : 1f) : 0f;
+            _aimWeight = Mathf.MoveTowards(_aimWeight, target, actionFadeSpeed * dt);
+            _aimIdleWeight = Mathf.MoveTowards(_aimIdleWeight,
+                aiming && !moving ? _aimWeight : 0f, actionFadeSpeed * dt);
+            _aimWalkWeight = Mathf.MoveTowards(_aimWalkWeight,
+                aiming && moving ? _aimWeight : 0f, actionFadeSpeed * dt);
+
+            _layerMixer.SetInputWeight(AimIdleLayer, _aimIdleWeight);
+            _layerMixer.SetInputWeight(AimWalkLayer, _aimWalkWeight);
+            ApplyLayerWeights();
+        }
+
+        /// <summary>Слой позы ожидания: вес, проигрывание клипа, замирание в конце.</summary>
+        private void UpdateStand(float dt)
+        {
+            if (!_layerMixer.IsValid()) return;
+
+            if (_standWeight <= 0.001f && _standTargetWeight <= 0f)
+            {
+                if (_standPlayable.IsValid()) DestroyStandPlayable();
+                _layerMixer.SetInputWeight(StandLayer, 0f);
+                return;
+            }
+
+            _standWeight = Mathf.MoveTowards(_standWeight, _standTargetWeight, actionFadeSpeed * dt);
+            _layerMixer.SetInputWeight(StandLayer, _standWeight);
+
+            if (!_standPlayable.IsValid() || _standWeight <= 0.01f) return;
+
+            _standTime += dt;
+            // Клип без Loop Time: замираем на последнем кадре, а не теряем позу.
+            if (_standClip != null && !_standClip.isLooping && _standTime >= _standLength)
+            {
+                _standPlayable.SetTime(_standLength);
+                _standPlayable.Pause();
+            }
+        }
+
+        private void CreateStandPlayable()
+        {
+            if (_standClip == null) return;
+            // _graphReady на этом этапе ещё false (граф собирается) — проверяем сам граф.
+            if (!_graph.IsValid() || !_layerMixer.IsValid()) return;
+            if (_standPlayable.IsValid()) return;
+
+            _standPlayable = AnimationClipPlayable.Create(_graph, _standClip);
+            _standPlayable.SetTime(0);
+            _standPlayable.Play();
+            _graph.Connect(_standPlayable, 0, _layerMixer, StandLayer);
+            _standTime = 0f;
+            _standLength = Mathf.Max(0.05f, (float)_standClip.length);
+            _layerMixer.SetInputWeight(StandLayer, _standWeight);
+        }
+
+        private void DestroyStandPlayable()
+        {
+            if (_standPlayable.IsValid())
+            {
+                if (_graph.IsValid() && _layerMixer.IsValid())
+                    _graph.Disconnect(_layerMixer, StandLayer);
+                _standPlayable.Destroy();
+            }
+            _standPlayable = new AnimationClipPlayable();
+        }
+
         private void CacheBindScales()
         {
             if (animator == null) return;
 
-            foreach (Transform t in animator.GetComponentsInChildren<Transform>(true))
+            Transform[] all = animator.GetComponentsInChildren<Transform>(true);
+            for (int i = 0; i < all.Length; i++)
             {
-                if (t == null || _bindScales.ContainsKey(t)) continue;
-                _bindScales[t] = t.localScale;
+                Transform t = all[i];
+                if (t == null) continue;
+                if (IndexOfBind(t) >= 0) continue;
+                AppendBind(t, t.localScale);
             }
-            // Чистим уничтоженные, чтобы словарь не рос бесконечно.
-            if (_bindScales.Count > 0)
+
+            // Чистим уничтоженные, чтобы массив не рос бесконечно.
+            int write = 0;
+            for (int i = 0; i < _bindCount; i++)
             {
-                List<Transform> dead = null;
-                foreach (var kv in _bindScales)
+                if (_bindTransforms[i] == null) continue;
+                _bindTransforms[write] = _bindTransforms[i];
+                _bindScales[write] = _bindScales[i];
+                write++;
+            }
+            for (int i = write; i < _bindCount; i++) _bindTransforms[i] = null;
+            _bindCount = write;
+        }
+
+        private int IndexOfBind(Transform t)
+        {
+            for (int i = 0; i < _bindCount; i++)
+                if (_bindTransforms[i] == t) return i;
+            return -1;
+        }
+
+        private void AppendBind(Transform t, Vector3 scale)
+        {
+            if (_bindCount >= _bindTransforms.Length)
+            {
+                int newSize = _bindTransforms.Length * 2;
+                var newTransforms = new Transform[newSize];
+                var newScales = new Vector3[newSize];
+                for (int i = 0; i < _bindCount; i++)
                 {
-                    if (kv.Key != null) continue;
-                    if (dead == null) dead = new List<Transform>();
-                    dead.Add(kv.Key);
+                    newTransforms[i] = _bindTransforms[i];
+                    newScales[i] = _bindScales[i];
                 }
-                if (dead != null)
-                    foreach (Transform d in dead) _bindScales.Remove(d);
+                _bindTransforms = newTransforms;
+                _bindScales = newScales;
             }
+
+            _bindTransforms[_bindCount] = t;
+            _bindScales[_bindCount] = scale;
+            _bindCount++;
         }
 
         private void RestoreBindScales()
         {
-            if (_bindScales.Count == 0) return;
-            foreach (var kv in _bindScales)
+            if (_bindCount == 0) return;
+            for (int i = 0; i < _bindCount; i++)
             {
-                Transform t = kv.Key;
+                Transform t = _bindTransforms[i];
                 if (t == null) continue;
-                Vector3 b = kv.Value;
+                Vector3 b = _bindScales[i];
                 Vector3 cur = t.localScale;
                 if (cur.x != b.x || cur.y != b.y || cur.z != b.z)
                 {
@@ -337,10 +641,13 @@ namespace ZharkoeLeto44.AI
 
         private void UpdateAction(float dt)
         {
+            if (!_layerMixer.IsValid()) return;
+
             if (!_actionPlayable.IsValid())
             {
-                _layerMixer.SetInputWeight(1, 0f);
+                _layerMixer.SetInputWeight(_actionLayer, 0f);
                 _actionWeight = 0f;
+                ApplyLayerWeights();
                 return;
             }
 
@@ -352,26 +659,36 @@ namespace ZharkoeLeto44.AI
                     _actionPlayable.SetTime(_actionLength);
                     _actionPlayable.Pause();
                     _actionWeight = 1f;
-                    _layerMixer.SetInputWeight(0, 0f);
-                    _layerMixer.SetInputWeight(1, 1f);
+                    _layerMixer.SetInputWeight(_actionLayer, 1f);
+                    ApplyLayerWeights();
                     return;
                 }
                 _actionTargetWeight = 0f;
                 if (_actionWeight <= 0.01f)
                 {
-                    _graph.Disconnect(_layerMixer, 1);
+                    _graph.Disconnect(_layerMixer, _actionLayer);
                     _actionPlayable.Destroy();
                     _actionPlayable = new AnimationClipPlayable();
-                    _layerMixer.SetInputWeight(1, 0f);
-                    _layerMixer.SetInputWeight(0, 1f);
+                    _layerMixer.SetInputWeight(_actionLayer, 0f);
+                    _actionClipInUse = null;
+                    ApplyLayerWeights();
                     return;
                 }
             }
 
             _actionWeight = Mathf.MoveTowards(
                 _actionWeight, _actionTargetWeight, actionFadeSpeed * dt);
-            _layerMixer.SetInputWeight(1, _actionWeight);
-            _layerMixer.SetInputWeight(0, _dead ? 0f : 1f - _actionWeight);
+            _layerMixer.SetInputWeight(_actionLayer, _actionWeight);
+            ApplyLayerWeights();
+        }
+
+        private void ApplyLayerWeights()
+        {
+            if (!_layerMixer.IsValid()) return;
+
+            // Базовый слой — вся локомоция. Слои сверху накладываются по весу.
+            // Смерть перекрывает всё (вес 1, без маски).
+            _layerMixer.SetInputWeight(0, _dead ? 0f : 1f);
         }
 
         /// <summary>
@@ -386,18 +703,18 @@ namespace ZharkoeLeto44.AI
             if (_actionPlayable.IsValid()) return;
             if (_deathClipInUse == null) _deathClipInUse = SelectDeathClip();
             if (_deathClipInUse == null) return; // tip-over: поворот уже на трансформе
-            StartAction(_deathClipInUse, holdAtEnd: true);
+            StartAction(_deathClipInUse, holdAtEnd: true, layer: DeathLayer);
             if (!_actionPlayable.IsValid()) return;
             _actionTime = _actionLength;
             _actionPlayable.SetTime(_actionLength);
             _actionPlayable.Pause();
             _actionWeight = 1f;
             _actionTargetWeight = 1f;
-            _layerMixer.SetInputWeight(0, 0f);
-            _layerMixer.SetInputWeight(1, 1f);
+            _layerMixer.SetInputWeight(DeathLayer, 1f);
+            ApplyLayerWeights();
         }
 
-        private void StartAction(AnimationClip clip, bool holdAtEnd)
+        private void StartAction(AnimationClip clip, bool holdAtEnd, int layer)
         {
             if (clip == null) return;
             if (!_graphReady || !_graph.IsValid())
@@ -413,21 +730,25 @@ namespace ZharkoeLeto44.AI
 
             if (_actionPlayable.IsValid())
             {
-                _graph.Disconnect(_layerMixer, 1);
+                _graph.Disconnect(_layerMixer, _actionLayer);
                 _actionPlayable.Destroy();
                 _actionPlayable = new AnimationClipPlayable();
+                _layerMixer.SetInputWeight(_actionLayer, 0f);
             }
 
+            _actionLayer = layer;
+            _actionClipInUse = clip;
             _actionPlayable = AnimationClipPlayable.Create(_graph, clip);
             _actionPlayable.SetTime(0);
             _actionPlayable.Play();
-            _graph.Connect(_actionPlayable, 0, _layerMixer, 1);
+            _graph.Connect(_actionPlayable, 0, _layerMixer, _actionLayer);
 
             _actionTime = 0f;
             _actionLength = Mathf.Max(0.05f, (float)clip.length);
             _actionHoldAtEnd = holdAtEnd;
             _actionTargetWeight = 1f;
-            _layerMixer.SetInputWeight(1, _actionWeight);
+            _layerMixer.SetInputWeight(_actionLayer, _actionWeight);
+            ApplyLayerWeights();
         }
 
         private int SlowestAvailableIndex()
@@ -474,12 +795,43 @@ namespace ZharkoeLeto44.AI
             return deathClip;
         }
 
+        private void RefreshClipCache()
+        {
+            _anchorCache[0] = 0f;
+            _anchorCache[1] = walkAnchorSpeed;
+            _anchorCache[2] = runAnchorSpeed;
+            _anchorCache[3] = sprintAnchorSpeed;
+            _anchorCache[4] = walkAnchorSpeed;
+            _anchorCache[5] = walkAnchorSpeed;
+            _anchorCache[6] = walkAnchorSpeed;
+
+            _clipCache[0] = idleClip;
+            _clipCache[1] = walkClip;
+            _clipCache[2] = runClip;
+            _clipCache[3] = sprintClip;
+            _clipCache[4] = strafeLeftClip;
+            _clipCache[5] = strafeRightClip;
+            _clipCache[6] = walkBackClip;
+        }
+
         private void ComputeTargets(float speed, bool forceMove, float[] outW)
         {
-            outW[0] = outW[1] = outW[2] = outW[3] = 0f;
+            for (int i = 0; i < LocoSlots; i++) outW[i] = 0f;
 
-            float[] anchors = { 0f, walkAnchorSpeed, runAnchorSpeed, sprintAnchorSpeed };
-            AnimationClip[] clips = { idleClip, walkClip, runClip, sprintClip };
+            float[] anchors = _anchorCache;
+            AnimationClip[] clips = _clipCache;
+
+            // Боковой/задний шаг: если клип задан — он перебивает обычную локомоцию.
+            // Если клипа нет — шага вбок не будет вовсе (солдат идёт прямо).
+            if (_strafe != StrafeKind.None)
+            {
+                int slot = _strafe == StrafeKind.Left ? 4 : (_strafe == StrafeKind.Right ? 5 : 6);
+                if (clips[slot] != null)
+                {
+                    outW[slot] = 1f;
+                    return;
+                }
+            }
 
             // ДВИЖЕНИЕ = АНИМАЦИЯ: есть приказ двигаться и есть чем (walk/run/sprint) —
             // idle запрещён, вес уходит на locomotion даже при скорости ~0.
@@ -522,7 +874,8 @@ namespace ZharkoeLeto44.AI
                 if (clips[i] != null) { if (first < 0) first = i; last = i; }
             if (first < 0) return;
 
-            if (speed <= idleMaxSpeed)
+            // Гистерезис: пока «идём» (даже на микрошаге) — не падаем в idle.
+            if (speed <= idleMaxSpeed && !_movingState)
             {
                 outW[idleClip != null ? 0 : first] = 1f;
                 return;
@@ -577,16 +930,18 @@ namespace ZharkoeLeto44.AI
                 }
             }
 
+            RefreshClipCache();
+
             _graph = PlayableGraph.Create("EnemyAnimator_" + name);
             _graph.SetTimeUpdateMode(DirectorUpdateMode.GameTime);
 
-            _locoMixer = AnimationMixerPlayable.Create(_graph, 4);
-            AnimationClip[] clips = { idleClip, walkClip, runClip, sprintClip };
-            for (int i = 0; i < 4; i++)
+            _locoMixer = AnimationMixerPlayable.Create(_graph, LocoSlots);
+            for (int i = 0; i < LocoSlots; i++)
             {
-                if (clips[i] != null)
+                AnimationClip clip = _clipCache[i];
+                if (clip != null)
                 {
-                    var p = AnimationClipPlayable.Create(_graph, clips[i]);
+                    var p = AnimationClipPlayable.Create(_graph, clip);
                     p.Play();
                     _locoPlayables[i] = p;
                     _graph.Connect(p, 0, _locoMixer, i);
@@ -599,22 +954,46 @@ namespace ZharkoeLeto44.AI
                 }
             }
 
-            _layerMixer = AnimationLayerMixerPlayable.Create(_graph, 2);
+            // Верхние слои: экшены (по маске), смерть (без маски), прицельные позы (по маске).
+            _layerMixer = AnimationLayerMixerPlayable.Create(_graph, LayerCount);
             _graph.Connect(_locoMixer, 0, _layerMixer, 0);
+            for (int i = 0; i < LayerCount; i++) _layerMixer.SetInputWeight(i, 0f);
             _layerMixer.SetInputWeight(0, 1f);
-            _layerMixer.SetInputWeight(1, 0f);
+
+            _aimIdlePlayable = ConnectLayerClip(aimIdleClip, AimIdleLayer);
+            _aimWalkPlayable = ConnectLayerClip(aimWalkClip, AimWalkLayer);
+
+            // Поза ожидания могла остаться от прошлого графа — переподключаем тот же клип.
+            if (_standClip != null) CreateStandPlayable();
+
+            if (upperBodyMask != null)
+            {
+                _layerMixer.SetLayerMaskFromAvatarMask(ActionLayer, upperBodyMask);
+                _layerMixer.SetLayerMaskFromAvatarMask(AimIdleLayer, upperBodyMask);
+                _layerMixer.SetLayerMaskFromAvatarMask(AimWalkLayer, upperBodyMask);
+            }
 
             var output = AnimationPlayableOutput.Create(_graph, "EnemyOutput", animator);
             output.SetSourcePlayable(_layerMixer);
 
             ComputeTargets(0f, false, _targets);
-            for (int i = 0; i < 4; i++) _weights[i] = _targets[i];
+            for (int i = 0; i < LocoSlots; i++) _weights[i] = _targets[i];
 
             _graph.Play();
             CacheBindScales();
             _graphReady = true;
             // Если пересобрались уже мёртвым — сразу долежать труп, не ждать кадра.
             if (_dead) HoldDeathPose();
+        }
+
+        private AnimationClipPlayable ConnectLayerClip(AnimationClip clip, int layer)
+        {
+            if (clip == null) return new AnimationClipPlayable();
+            var p = AnimationClipPlayable.Create(_graph, clip);
+            p.Play();
+            _graph.Connect(p, 0, _layerMixer, layer);
+            _layerMixer.SetInputWeight(layer, 0f);
+            return p;
         }
 
         private void DestroyGraph()
@@ -624,12 +1003,18 @@ namespace ZharkoeLeto44.AI
             _actionPlayable = new AnimationClipPlayable();
             _actionWeight = 0f;
             _actionTargetWeight = 0f;
+            _aimWeight = 0f;
+            _actionClipInUse = null;
+            // Плейабл позы ожидания: клип (_standClip) сохраняем — он переподключится
+            // при следующей сборке графа. Сам плейабл чистим вместе с графом.
+            _standPlayable = new AnimationClipPlayable();
+            _standWeight = 0f;
             // Бинд-скейлы НЕ чистим: они захвачены чистыми в Awake (до графа) и переживают
             // пересборку — иначе Rebuild посреди погони узаконил бы искажение.
         }
 
         /// <summary>
-        /// БАГ: AnimatorController в поле Controller и PlayableGraph крутят кости
+        /// БУГ: AnimatorController в поле Controller и PlayableGraph крутят кости
         /// одновременно — переход дёргается и проигрывается дважды. Клипы должны
         /// жить только в полях ниже (Локомоция/Экшен), Controller — пустой (None).
         /// </summary>

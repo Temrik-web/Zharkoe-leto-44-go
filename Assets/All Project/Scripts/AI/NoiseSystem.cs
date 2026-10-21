@@ -22,6 +22,10 @@ public static class NoiseSystem
     }
 
     public static event Action<Noise> NoiseCreated;
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    private static void ResetStatics() => NoiseCreated = null;
+
     public static void Emit(
         Vector3 position,
         float radius,

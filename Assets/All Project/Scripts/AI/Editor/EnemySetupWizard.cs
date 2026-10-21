@@ -240,9 +240,12 @@ public static class EnemySetupWizard
 
             var aiSo = new SerializedObject(ai);
             SerializedProperty teamProp = aiSo.FindProperty("enemyTeam");
-            if (teamProp != null && teamProp.enumValueIndex == (int)CombatTeam.Allies)
+            // Своя команда = команда CharacterHealth. Прежний костыль «Allies → Axis»
+            // убран: он молча переписывал поле и маскировал рассинхрон со сценой.
+            CharacterHealth aiHealth = go.GetComponent<CharacterHealth>();
+            if (teamProp != null && aiHealth != null)
             {
-                teamProp.enumValueIndex = (int)CombatTeam.Axis;
+                teamProp.enumValueIndex = (int)aiHealth.Team;
                 aiSo.ApplyModifiedProperties();
                 changed = true;
             }
@@ -375,8 +378,8 @@ public static class EnemySetupWizard
         SetRef(aiSo, "enemyAnimator", enemyAnimator);
 
         SerializedProperty teamProp = aiSo.FindProperty("enemyTeam");
-        if (teamProp != null && teamProp.enumValueIndex == (int)CombatTeam.Allies)
-            teamProp.enumValueIndex = (int)CombatTeam.Axis;
+        // Своя команда = команда CharacterHealth (выставлена выше), без костылей.
+        if (teamProp != null) teamProp.enumValueIndex = (int)CombatTeam.Axis;
 
         SerializedProperty tm = aiSo.FindProperty("targetMask");
         SerializedProperty vm = aiSo.FindProperty("visibilityMask");

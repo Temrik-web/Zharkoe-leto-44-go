@@ -9,8 +9,8 @@ using ZharkoeLeto44.AI;
 /// Порядок:
 ///  1. Игрок подбирает ППШ — за дверью появляется немец и стучит.
 ///  2. Игрок открывает дверь — начинается разговор.
-///  3. Немец просит хлеб и воду. Если игрок отказывает — немец свистит,
-///     на улице появляются шестеро немцев (спавнпоинты) и все бросаются на игрока.
+///  3. Немец требует хлеб и воду.
+///     Если игрок отказывает — немец свистит и убегает (засада отключена).
 ///  4. Если игрок даёт еду — немец уходит и пропадает.
 ///
 /// Настройки — в инспекторе; префабы немцев и точки появления перетаскиваются мышью.
@@ -76,6 +76,9 @@ public class PpshGermanEncounter : MonoBehaviour
     public string knockMessage = "Кто-то стучит в дверь...";
     [Tooltip("Снять замок с двери, когда немец постучит (он её отпер).")]
     public bool unlockDoorOnKnock = true;
+    [Tooltip("Анимация, когда немец стоит у двери и ждёт (клип из инспектора). " +
+             "Пусто — обычный idle. Передаётся компоненту German Beggar.")]
+    public AnimationClip beggarStandAnimation;
     [Tooltip("Трясти камеру при каждом ударе.")]
     public bool shakeOnKnock = true;
     [Tooltip("Длительность тряски, сек.")]
@@ -710,6 +713,8 @@ public class PpshGermanEncounter : MonoBehaviour
         beggar = german.GetComponent<GermanBeggar>();
         if (beggar == null) beggar = german.AddComponent<GermanBeggar>();
         beggar.SetPeaceful();
+        // Поза ожидания у двери: клип выбирается здесь, в инспекторе сценария.
+        if (beggarStandAnimation != null) beggar.standAnimation = beggarStandAnimation;
 
         // Идёт к двери и встаёт напротив.
         Vector3 stand = ResolveStandPoint();
@@ -929,6 +934,7 @@ public class PpshGermanEncounter : MonoBehaviour
         if (refused)
         {
             Phase = EncounterPhase.Resolved;
+            // Немец свистит и зовёт своих: засада выбегает на игрока.
             StartCoroutine(RaidRoutine());
             return;
         }
@@ -976,6 +982,10 @@ public class PpshGermanEncounter : MonoBehaviour
     // Отказ — свист и засада
     // ------------------------------------------------------------------
 
+    /// <summary>
+    /// Игрок отказался: немец свистит, зовёт своих — на улице появляются немцы
+    /// и бросаются на игрока. Они сразу бегут к игроку и раскладываются по фронту.
+    /// </summary>
     IEnumerator RaidRoutine()
     {
         GameState.SetFlag(FinishedFlag, true);
@@ -1001,7 +1011,7 @@ public class PpshGermanEncounter : MonoBehaviour
 
         Say("Свист! Свист!", Color.red);
 
-        // Шестеро на спавнпоинтах.
+        // Немцы на спавнпоинтах.
         for (int i = 0; i < raiderCount; i++)
         {
             GameObject raider = SpawnRaider(i);
@@ -1073,7 +1083,7 @@ public class PpshGermanEncounter : MonoBehaviour
                 float dist = Vector3.Distance(t.position, DoorPosition());
                 if (dist <= 60f) return t.position;
             }
-            Debug.LogWarning("[PpshGerman] Точки засады уехали от двери — ставим засаду по-своему. " +
+            Debug.LogWarning("[PpshGerman] Точки засады уехали от двери — берём засаду по-своему. " +
                              "Передвинь «Точки засады» ближе к дому.", this);
         }
 
