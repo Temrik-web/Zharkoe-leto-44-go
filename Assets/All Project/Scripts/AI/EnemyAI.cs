@@ -837,6 +837,17 @@ namespace ZharkoeLeto44.AI
         }
 
         public void SetPatrolRoute(PatrolRoute route) => patrolRoute = route;
+
+        /// <summary>
+        /// Спавнер/сценарий: «держать точку» — выключить самостоятельное блуждание
+        /// (солдат стоит и осматривается) или сменить его радиус. Патрульный
+        /// маршрут не трогает: чтобы его снять, вызови SetPatrolRoute(null).
+        /// </summary>
+        public void SetWander(bool enabled, float radius = -1f)
+        {
+            wanderWhenNoRoute = enabled;
+            if (radius > 0f) wanderRadius = Mathf.Max(1f, radius);
+        }
         public void SetWeapon(HitscanWeapon newWeapon)
         {
             if (weapon == newWeapon) return;

@@ -20748,6 +20748,7 @@ MonoBehaviour:
   oncePerScene: 1
   autoFixWiring: 1
   maxDoorDistanceFromPpsh: 40
+  autoMoveSpawnPoints: 0
   cellarDoorKeyId: cellar
   cellarDoorQuestId: q_cellar_door
   germanPrefab: {fileID: 8231103581635201523, guid: d30e1adf885f2014f9dd1d97c9c71eb3, type: 3}
@@ -20785,6 +20786,10 @@ MonoBehaviour:
   - {fileID: 1336419276}
   - {fileID: 689212862}
   - {fileID: 1190645092}
+  spawnNavMeshSnap: 2.5
+  spawnNavMeshAreaMask: -3
+  spawnSpacing: 2.5
+  facePlayerOnSpawn: 1
   raiderCount: 6
   raiderSpawnInterval: 0.35
   raiderAggroDelay: 1.2

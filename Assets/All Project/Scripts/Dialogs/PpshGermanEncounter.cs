@@ -44,10 +44,14 @@ public class PpshGermanEncounter : MonoBehaviour
     public bool oncePerScene = true;
 
     [Header("Автопривязка (чинит кривую сцену)")]
-    [Tooltip("На старте сам находит дверь подвала, переносит точки и еду к настоящему ППШ.")]
+    [Tooltip("На старте сам находит дверь подвала, переносит точку у двери и еду к настоящему ППШ. " +
+             "Спавнпоинты не двигает (для этого Auto Move Spawn Points).")]
     public bool autoFixWiring = true;
     [Tooltip("Если назначенная дверь дальше этого расстояния от подбираемого ППШ — берём дверь подвала, м.")]
     [Min(1f)] public float maxDoorDistanceFromPpsh = 40f;
+    [Tooltip("Автопривязка переносит и точки засады к двери (старое поведение). " +
+             "Выкл — точки остаются ровно там, где поставлены.")]
+    public bool autoMoveSpawnPoints = false;
     [Tooltip("Id ключа двери подвала (поле Required Key Id у DoorController).")]
     public string cellarDoorKeyId = "cellar";
     [Tooltip("Id квеста, открывающего дверь подвала (поле Auto Unlock Quest Id).")]
@@ -109,8 +113,18 @@ public class PpshGermanEncounter : MonoBehaviour
     [Header("Засада: шестеро немцев")]
     [Tooltip("Префабы немцев для засады. Можно один и тот же.")]
     public GameObject[] raiderPrefabs = new GameObject[0];
-    [Tooltip("Точки появления на улице. Если пусто — кольцо вокруг игрока.")]
+    [Tooltip("Точки появления на улице. Если заданы — немец №i появляется РОВНО в точке №i. " +
+             "Если пусто — кольцо вокруг игрока.")]
     public Transform[] spawnPoints = new Transform[0];
+    [Tooltip("Насколько точка может «прилипнуть» к NavMesh, м. 0 — не двигать точку вообще. " +
+             "Если рядом меша нет — немец появится ровно в точке, с предупреждением.")]
+    [Min(0f)] public float spawnNavMeshSnap = 2.5f;
+    [Tooltip("Маска областей NavMesh. По умолчанию — все, кроме «Not Walkable» (индекс 1).")]
+    public int spawnNavMeshAreaMask = ~(1 << 1);
+    [Tooltip("Дистанция между немцами, если точек меньше, чем немцев, м.")]
+    [Min(1f)] public float spawnSpacing = 2.5f;
+    [Tooltip("Поворачивать заспавненных немцев лицом к игроку (выкл — поворот точки).")]
+    public bool facePlayerOnSpawn = true;
     [Tooltip("Сколько немцев поднять.")]
     [Min(1)] public int raiderCount = 6;
     [Tooltip("Пауза между появлениями, сек.")]
@@ -159,6 +173,8 @@ public class PpshGermanEncounter : MonoBehaviour
     private bool hintShown;
     private bool knockStarted;
     private float walkDeadline;
+    private bool spawnPointOffMeshWarned;
+    private bool spawnPointsEmptyWarned;
     private DoorController hookedDoor;
     private bool spawnFailed;
     private Pickup triggerPickup;
@@ -361,7 +377,7 @@ public class PpshGermanEncounter : MonoBehaviour
             Debug.Log($"[PpshGerman] Автопривязка: точка «Откуда идёт немец» перенесена к двери ({approach}).", this);
         }
 
-        if (spawnPoints != null && spawnPoints.Length > 0)
+        if (autoMoveSpawnPoints && spawnPoints != null && spawnPoints.Length > 0)
         {
             Vector3 right = Vector3.Cross(Vector3.up, side).normalized;
             for (int i = 0; i < spawnPoints.Length; i++)
@@ -520,7 +536,14 @@ public class PpshGermanEncounter : MonoBehaviour
     /// <summary>Игрок открыл дверь — начинаем разговор.</summary>
     void OnDoorOpened()
     {
-        if (Phase == EncounterPhase.Resolved || Phase == EncounterPhase.WaitingTrigger) return;
+        if (Phase != EncounterPhase.Knocking) return;
+
+        // Немец ещё не появился (идёт knockDelay). Раньше здесь безусловно
+        // ставился WaitingDoor — и сцена вставала навсегда: UpdateKnocking уже
+        // не вызывался, значит немец не спавнился и не стучал. Пусть сцену
+        // доведёт UpdateKnocking (он сам проверит IsDoorOpen после стука).
+        if (german == null) return;
+
         Debug.Log("[PpshGerman] Дверь открыли — начинаем разговор.", this);
         Phase = EncounterPhase.WaitingDoor;
     }
@@ -608,6 +631,9 @@ public class PpshGermanEncounter : MonoBehaviour
         {
             if (Time.time < nextKnockTime) return;
             SpawnGerman();
+            // Префаба нет — SpawnGerman ничего не создал. Не долбим его каждый
+            // кадр: откладываем попытку (префаб могут назначить на ходу).
+            if (german == null) nextKnockTime = Time.time + 1f;
             return;
         }
 
@@ -702,6 +728,11 @@ public class PpshGermanEncounter : MonoBehaviour
         spawnFailed = false;
 
         Vector3 approach = ResolveApproachPoint();
+        // Точка подхода могла оказаться над/под землёй — притягиваем к NavMesh,
+        // иначе NavMeshAgent создаётся вне меша («Failed to create agent»).
+        if (SpawnPlacement.TrySnap(approach, spawnNavMeshSnap,
+                spawnNavMeshAreaMask, out Vector3 snappedApproach))
+            approach = snappedApproach;
         Vector3 lookDir = Flat(PlayerPosition() - approach);
         if (lookDir.sqrMagnitude < 0.01f && door != null) lookDir = Flat(door.transform.forward);
         Quaternion rot = lookDir.sqrMagnitude > 0.01f
@@ -961,7 +992,9 @@ public class PpshGermanEncounter : MonoBehaviour
         if (beggar == null) yield break;
 
         Vector3 away = Flat(beggar.transform.position - PlayerPosition());
-        if (away.sqrMagnitude < 0.01f) away = Flat(-playerTransform.forward);
+        if (away.sqrMagnitude < 0.01f)
+            away = playerTransform != null ? Flat(-playerTransform.forward) : Vector3.forward;
+        if (away.sqrMagnitude < 0.01f) away = Vector3.forward;
         away.Normalize();
 
         Vector3 exit = beggar.transform.position + away * leaveDistance;
@@ -1028,6 +1061,7 @@ public class PpshGermanEncounter : MonoBehaviour
             {
                 if (raider == null) continue;
                 EnemyAI ai = raider.GetComponent<EnemyAI>();
+                if (ai == null) ai = raider.GetComponentInChildren<EnemyAI>(true);
                 if (ai != null) ai.ForceTarget(playerTransform);
             }
         }
@@ -1062,32 +1096,84 @@ public class PpshGermanEncounter : MonoBehaviour
         GameObject prefab = raiderPrefabs[index % raiderPrefabs.Length];
         if (prefab == null) return null;
 
-        Vector3 pos = ResolveSpawnPoint(index);
-        Quaternion rot = Quaternion.LookRotation(Flat(PlayerPosition() - pos), Vector3.up);
+        Vector3 pos = ResolveSpawnPoint(index, out Quaternion pointRotation);
+        Quaternion rot = facePlayerOnSpawn && playerTransform != null
+            ? SpawnPlacement.LookAt(pos, playerTransform.position, transform.forward)
+            : pointRotation;
 
         GameObject raider = Instantiate(prefab, pos, rot);
         raider.name = $"Немец (засада {index + 1})";
+
+        // До команды «в бой» (raiderAggroDelay) солдат СТОИТ на точке, а не
+        // уходит в патруль/блуждание: иначе засада расползается из точек.
+        EnemyAI ai = raider.GetComponent<EnemyAI>();
+        if (ai == null) ai = raider.GetComponentInChildren<EnemyAI>(true);
+        if (ai != null)
+        {
+            ai.SetPatrolRoute(null);
+            ai.SetWander(false);
+        }
+
         return raider;
     }
 
-    Vector3 ResolveSpawnPoint(int index)
+    /// <summary>
+    /// Точка засады: позиция точки — ровно та, что поставили (с привязкой к
+    /// NavMesh), поворот — точки. Никаких подмен «далеко от двери → кольцо»:
+    /// дизайнер сказал «здесь», значит здесь.
+    /// </summary>
+    Vector3 ResolveSpawnPoint(int index, out Quaternion pointRotation)
     {
+        pointRotation = Quaternion.identity;
+
         if (spawnPoints != null && spawnPoints.Length > 0)
         {
             for (int i = 0; i < spawnPoints.Length; i++)
             {
-                Transform t = spawnPoints[(index + i) % spawnPoints.Length];
+                int slot = index + i;
+                Transform t = spawnPoints[slot % spawnPoints.Length];
                 if (t == null) continue;
 
-                // Точка засады должна быть на улице рядом с домом. Уехала — ставим сами.
-                float dist = Vector3.Distance(t.position, DoorPosition());
-                if (dist <= 60f) return t.position;
+                pointRotation = t.rotation;
+                Vector3 desired = t.position;
+
+                // Немцев больше, чем точек: второй круг ставим рядом с точкой,
+                // чтобы двое не слиплись в одной.
+                if (index >= spawnPoints.Length)
+                {
+                    float angle = (slot * 137.5f) * Mathf.Deg2Rad;
+                    desired += new Vector3(Mathf.Sin(angle), 0f, Mathf.Cos(angle)) *
+                               Mathf.Max(1f, spawnSpacing);
+                }
+
+                if (SpawnPlacement.TrySnap(desired, spawnNavMeshSnap,
+                        spawnNavMeshAreaMask, out Vector3 snapped))
+                    return snapped;
+
+                if (!spawnPointOffMeshWarned)
+                {
+                    spawnPointOffMeshWarned = true;
+                    Debug.LogWarning($"[PpshGerman] Точка засады «{t.name}» ({desired}) не на NavMesh " +
+                                     "и рядом его нет — немцы появятся ровно в точках, но ходить " +
+                                     "не смогут. Запеки NavMesh под точками засады.", this);
+                }
+                return desired;
             }
-            Debug.LogWarning("[PpshGerman] Точки засады уехали от двери — берём засаду по-своему. " +
-                             "Передвинь «Точки засады» ближе к дому.", this);
+
+            if (!spawnPointsEmptyWarned)
+            {
+                spawnPointsEmptyWarned = true;
+                Debug.LogWarning("[PpshGerman] Все «Точки засады» пустые — берём кольцо вокруг игрока. " +
+                                 "Перетащи Transform'ы точек в поле Spawn Points.", this);
+            }
         }
 
-        // Запасной вариант: кольцо вокруг игрока.
+        return FallbackSpawnPoint(index, out pointRotation);
+    }
+
+    /// <summary>Запасной вариант: кольцо вокруг игрока (только если точек нет).</summary>
+    Vector3 FallbackSpawnPoint(int index, out Quaternion rotation)
+    {
         Vector3 center = PlayerPosition();
         Vector3 forward = Flat(playerTransform != null ? playerTransform.forward : Vector3.forward);
         if (forward.sqrMagnitude < 0.01f) forward = Vector3.forward;
@@ -1098,7 +1184,12 @@ public class PpshGermanEncounter : MonoBehaviour
         if (fallbackBehindPlayer && index % 2 == 1) dir = -dir;
         dir.Normalize();
 
-        return center + dir * fallbackSpawnRadius;
+        Vector3 desired = center + dir * fallbackSpawnRadius;
+        Vector3 point = desired;
+        SpawnPlacement.TrySnap(desired, spawnNavMeshSnap, spawnNavMeshAreaMask, out point);
+
+        rotation = SpawnPlacement.LookAt(point, center, Vector3.forward);
+        return point;
     }
 
     void PlayWhistleAtSelf()
@@ -1188,6 +1279,8 @@ public class PpshGermanEncounter : MonoBehaviour
         knocksDone = 0;
         knockStarted = false;
         outsideSideReady = false;
+        spawnPointOffMeshWarned = false;
+        spawnPointsEmptyWarned = false;
         if (german != null) Destroy(german.gameObject);
         german = null;
         beggar = null;

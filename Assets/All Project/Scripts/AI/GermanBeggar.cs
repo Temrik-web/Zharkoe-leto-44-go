@@ -18,6 +18,9 @@ public class GermanBeggar : MonoBehaviour
     public float walkSpeed = 2.4f;
     [Tooltip("Скорость поворота к игроку, град/с.")]
     public float faceTurnSpeed = 90f;
+    [Tooltip("Исчезнуть (уничтожить объект) по прибытии в точку ухода. " +
+             "Выкл — объект останется стоять (сценарий уничтожит сам).")]
+    public bool destroyOnLeaveArrival = true;
 
     [Header("Поза у двери")]
     [Tooltip("Анимация, когда немец стоит у двери и ждёт (клип выбирается в инспекторе). " +
@@ -51,10 +54,12 @@ public class GermanBeggar : MonoBehaviour
     private GameObject weaponObject;
     private EnemyAnimator animatorDriver;
     private Animator plainAnimator;
+    private UnityEngine.AI.NavMeshAgent navAgent;
     private bool standPoseActive;
     private bool peacefulRefusalLogged;
     private Vector3 leaveTarget;
     private bool hasLeaveTarget;
+    private float destroyAtTime = -1f;
     private Vector3 walkTarget;
     private float walkArriveDistance = 1.3f;
     private float lastWalkCheckTime;
@@ -81,6 +86,7 @@ public class GermanBeggar : MonoBehaviour
         if (weapon != null && weaponObject == null) weaponObject = weapon.gameObject;
         if (animatorDriver == null) animatorDriver = GetComponentInChildren<EnemyAnimator>(true);
         if (plainAnimator == null) plainAnimator = GetComponentInChildren<Animator>(true);
+        if (navAgent == null) navAgent = GetComponent<UnityEngine.AI.NavMeshAgent>();
     }
 
     void Update()
@@ -201,8 +207,8 @@ public class GermanBeggar : MonoBehaviour
     {
         get
         {
-            UnityEngine.AI.NavMeshAgent agent = GetComponent<UnityEngine.AI.NavMeshAgent>();
-            return agent != null && agent.enabled && agent.isOnNavMesh;
+            if (navAgent == null) navAgent = GetComponent<UnityEngine.AI.NavMeshAgent>();
+            return navAgent != null && navAgent.enabled && navAgent.isOnNavMesh;
         }
     }
 
@@ -221,10 +227,10 @@ public class GermanBeggar : MonoBehaviour
         }
 
         // Через агента, иначе он вернёт объект на прежнее место.
-        UnityEngine.AI.NavMeshAgent agent = GetComponent<UnityEngine.AI.NavMeshAgent>();
-        if (agent != null && agent.enabled && agent.isOnNavMesh)
+        if (navAgent == null) navAgent = GetComponent<UnityEngine.AI.NavMeshAgent>();
+        if (navAgent != null && navAgent.enabled && navAgent.isOnNavMesh)
         {
-            agent.Warp(point);
+            navAgent.Warp(point);
         }
         else
         {
@@ -382,6 +388,7 @@ public class GermanBeggar : MonoBehaviour
 
         leaveTarget = target;
         hasLeaveTarget = true;
+        destroyAtTime = -1f;
         Motor.SetSpeed(walkSpeed);
         GiveRotationToAgent();
         Motor.MoveTo(target);
@@ -412,6 +419,13 @@ public class GermanBeggar : MonoBehaviour
         if (ReachedExit)
         {
             Motor.Stop();
+            // «Ушёл» — значит исчез. Сценарий тоже уничтожает его, но Leave()
+            // может звать и кто-то ещё: без этого объект стоял бы вечно.
+            if (destroyOnLeaveArrival)
+            {
+                if (destroyAtTime < 0f) destroyAtTime = Time.time + 0.2f;
+                else if (Time.time >= destroyAtTime) Destroy(gameObject);
+            }
             return;
         }
 
