@@ -141,6 +141,10 @@ namespace ZharkoeLeto44.AI
         [SerializeField, Min(0.5f)] private float squadSeparationDistance = 4.5f;
         [Tooltip("Сила мягкого расхождения, 0–1.")]
         [SerializeField, Range(0f, 1f)] private float squadSeparationStrength = 0.8f;
+        [Tooltip("Радиус области, по которой солдаты расходятся, когда у них есть " +
+                 "информация, ГДЕ игрок (шум, контакт, последняя известная позиция). " +
+                 "Если места мало (стены, край NavMesh) — область сжимается сама.")]
+        [SerializeField, Min(2f)] private float squadAreaSpreadRadius = 14f;
         [Tooltip("Насколько солдат может отойти от своей точки и считать, что он на месте, м.")]
         [SerializeField, Min(0.1f)] private float combatAnchorTolerance = 1.2f;
         [Tooltip("Допуск до боевой дистанции, м. Видимая цель ближе этого — солдат " +
@@ -158,6 +162,10 @@ namespace ZharkoeLeto44.AI
         [SerializeField, Min(0.1f)] private float squadCommitTime = 1.5f;
         [Tooltip("Длительность перебежки для роли «Манёвр», м (8–12).")]
         [SerializeField, Min(2f)] private float maneuverDistance = 10f;
+        [Tooltip("Множитель скорости перебежки на ВЫГОДНУЮ ПОЗИЦИЮ (боевой якорь, " +
+                 "манёвр, фланг, укрытие). Применяется поверх Run Speed: солдат " +
+                 "занимает место решительным рывком, а не шагом.")]
+        [SerializeField, Min(1f)] private float repositionSpeedMultiplier = 1.5f;
         [Tooltip("Не подходить к игроку ближе этого расстояния, м.")]
         [SerializeField, Min(0f)] private float tacticMinTargetDistance = 6f;
         [Tooltip("Доля здоровья, ниже которой солдат считается раненым и стреляет реже.")]
@@ -330,6 +338,18 @@ namespace ZharkoeLeto44.AI
         internal Transform SquadTarget => _target;
         internal EnemyMotor Motor => _motor;
 
+        /// <summary>
+        /// Точка, где солдат СЧИТАЕТ, что находится игрок: подозрение (шум/контакт),
+        /// центр поиска или последняя известная позиция. Нужна для распределения
+        /// отряда по области, а не в одну воронку.
+        /// </summary>
+        internal Vector3 KnownArea => State switch
+        {
+            EnemyState.Alert => _suspicionPoint,
+            EnemyState.Search => _searchCenter,
+            _ => _lastKnownTargetPosition
+        };
+
         // ── Данные для координатора отряда ──────────────────────────────────
         internal int SquadStamp { get; set; }
         internal SquadRole Role { get; private set; } = SquadRole.Fire;
@@ -351,6 +371,12 @@ namespace ZharkoeLeto44.AI
         /// идёт шагом, и не выглядит «снаряжающимся на бой».
         /// </summary>
         private float RunSpeed => chaseSpeed * Mathf.Max(1f, sprintSpeedMultiplier);
+
+        /// <summary>
+        /// Скорость перебежки на ВЫГОДНУЮ ПОЗИЦИЮ: боевой якорь, манёвр, фланг,
+        /// укрытие. Быстрее обычного бега — позицию занимают рывком.
+        /// </summary>
+        private float RepositionSpeed => RunSpeed * Mathf.Max(1f, repositionSpeedMultiplier);
 
         /// <summary>Может ли солдат держать жетон атаки: есть патроны и он не ранен.</summary>
         internal bool CanTakeFireToken =>
@@ -456,6 +482,12 @@ namespace ZharkoeLeto44.AI
         private float _formationLateral;
         private float _formationDepth;
         private Vector3 _separationOffset;
+
+        // Распределение по области вокруг «игрок там»: смещение от центра
+        // кешируется ~5 Гц, чтобы не строить путь на каждого солдата каждый кадр.
+        private float _nextAreaSpreadTime;
+        private Vector3 _areaSpreadCenter;
+        private Vector3 _areaSpreadOffset;
         private float _nextAnchorCheckTime;
         private Vector3 _anchorNavCorrection;
         private float _nextChaseGoalTime;
@@ -690,6 +722,9 @@ namespace ZharkoeLeto44.AI
             _squadPersonalSpace = 0f;
             _hasCombatAnchor = false;
             _formationReady = false;
+            _areaSpreadCenter = Vector3.zero;
+            _areaSpreadOffset = Vector3.zero;
+            _nextAreaSpreadTime = 0f;
             _lookAroundPhase = LookAroundPhase.None;
             _lookAtSoundUntil = 0f;
             _nextLookAroundTime = Time.time + Random.Range(lookAroundIntervalMin,
@@ -738,7 +773,7 @@ namespace ZharkoeLeto44.AI
             enemyAnimator.ConfigureSpeedAnchors(
                 patrolSpeed,
                 chaseSpeed,
-                chaseSpeed * Mathf.Max(1f, sprintSpeedMultiplier));
+                Mathf.Max(RunSpeed, RepositionSpeed));
         }
 
         /// <summary>Приоритет обхода по хэшу id: у каждого солдата свой (20–99).</summary>
@@ -1855,7 +1890,9 @@ namespace ZharkoeLeto44.AI
             // Настороженный — тоже бегом: подозрение горит, идти шагом нельзя.
             _motor.SetSpeed(RunSpeed);
             _motor.SetSprintMode(true);
-            RefreshDestination(_suspicionPoint);
+            // Есть информация, где игрок — расходимся по области вокруг точки,
+            // а не сбегаемся всей толпой в одну воронку.
+            RefreshDestination(AreaSpreadGoal(_suspicionPoint));
 
             if (_motor.HasArrived())
             {
@@ -1963,6 +2000,12 @@ namespace ZharkoeLeto44.AI
                         continue;
                 }
 
+                // Точка не должна вставать в кучу с соседями: поиск идёт
+                // по области, а не плечом к плечу в одной воронке.
+                if (useSquadTactics && InfantrySquad.IsCrowded(this, point,
+                        squadSeparationDistance * 0.75f))
+                    continue;
+
                 _searchPoints[_searchPointTotal++] = point;
             }
         }
@@ -1987,7 +2030,16 @@ namespace ZharkoeLeto44.AI
             bool recentlyVisible = Time.time - _lastTargetSeenTime <= perceptionInterval * 2f;
 
             Vector3 chaseGoal = _lastKnownTargetPosition;
-            if (useSquadTactics && recentlyVisible)
+            if (useSquadTactics && !recentlyVisible)
+            {
+                // Цель не видна, но информация «игрок там» есть (шум, контакт,
+                // последняя известная точка) — расходимся по области вокруг неё,
+                // а не сбегаемся всей толпой в одну точку.
+                chaseGoal = AreaSpreadGoal(_lastKnownTargetPosition);
+                _chaseGoalOffset = Vector3.zero;
+                _nextChaseGoalTime = 0f;
+            }
+            else if (useSquadTactics)
             {
                 // Раскладка строя в погоне — тоже тяжёлый O(N)-обход по отряду,
                 // поэтому ~5 Гц со сдвигом (D4), а не каждый кадр.
@@ -2106,9 +2158,9 @@ namespace ZharkoeLeto44.AI
             if (!holdingFire && !holdForShot &&
                 anchorDistance > combatAnchorTolerance)
             {
-                // Смена позиции — бегом: солдат не топает на месте, а быстро
+                // Смена позиции — перебежкой: солдат не топает на месте, а быстро
                 // занимает своё место в строю и оттуда стреляет.
-                _motor.SetSpeed(RunSpeed);
+                _motor.SetSpeed(RepositionSpeed);
                 _motor.SetSprintMode(true);
                 RefreshDestination(anchor, 1f);
                 moving = true;
@@ -2206,8 +2258,8 @@ namespace ZharkoeLeto44.AI
             if (!holdingFire && !holdForShot &&
                 anchorDistance > combatAnchorTolerance)
             {
-                // Выход на позицию — бегом.
-                _motor.SetSpeed(RunSpeed);
+                // Выход на выгодную позицию — решительной перебежкой.
+                _motor.SetSpeed(RepositionSpeed);
                 _motor.SetSprintMode(true);
                 RefreshDestination(anchor, 1f);
                 moving = true;
@@ -2236,7 +2288,7 @@ namespace ZharkoeLeto44.AI
             Vector3 goal = SquadGoal;
             if (FlatDistance(transform.position, goal) > 1.5f)
             {
-                _motor.SetSpeed(RunSpeed);
+                _motor.SetSpeed(RepositionSpeed);
                 _motor.SetSprintMode(true);
                 RefreshDestination(goal, 1f);
                 _motor.SetAutoRotation(true);
@@ -2255,7 +2307,7 @@ namespace ZharkoeLeto44.AI
             Vector3 goal = SquadGoal;
             if (FlatDistance(transform.position, goal) > 1.5f)
             {
-                _motor.SetSpeed(RunSpeed);
+                _motor.SetSpeed(RepositionSpeed);
                 _motor.SetSprintMode(true);
                 RefreshDestination(goal, 1f);
                 _motor.SetAutoRotation(true);
@@ -2277,8 +2329,8 @@ namespace ZharkoeLeto44.AI
             Vector3 goal = SquadGoal;
             if (FlatDistance(transform.position, goal) > 1.2f)
             {
-                _motor.SetSpeed(chaseSpeed);
-                _motor.SetSprintMode(false);
+                _motor.SetSpeed(RepositionSpeed);
+                _motor.SetSprintMode(true);
                 RefreshDestination(goal, 1f);
                 _motor.SetAutoRotation(true);
                 return;
@@ -2437,6 +2489,31 @@ namespace ZharkoeLeto44.AI
             }
 
             return anchor + _anchorNavCorrection;
+        }
+
+        /// <summary>
+        /// Цель с распределением по области. Когда у солдат есть ИНФОРМАЦИЯ,
+        /// где игрок (шум, контакт, последняя известная точка), они занимают
+        /// места по кольцу вокруг неё, а не сбегаются в одну воронку.
+        /// Смещение пересчитывается ~5 Гц; если места нет (стены, край NavMesh),
+        /// InfantrySquad прижимает точку ближе к центру.
+        /// </summary>
+        private Vector3 AreaSpreadGoal(Vector3 center)
+        {
+            if (!useSquadTactics) return center;
+
+            if (Time.time >= _nextAreaSpreadTime ||
+                FlatDistance(center, _areaSpreadCenter) > 5f)
+            {
+                _nextAreaSpreadTime = Time.time + FormationRefreshInterval +
+                    Random.Range(0f, FormationRefreshJitter);
+                _areaSpreadCenter = center;
+                _areaSpreadOffset = InfantrySquad.AdjustAreaGoal(this, center,
+                    Mathf.Max(squadAreaSpreadRadius, squadSeparationDistance)) - center;
+                _areaSpreadOffset.y = 0f;
+            }
+
+            return center + _areaSpreadOffset;
         }
 
         /// <summary>
@@ -2652,8 +2729,10 @@ namespace ZharkoeLeto44.AI
 
         private void GoSearchLastKnown()
         {
-            _motor.SetSpeed(chaseSpeed);
-            RefreshDestination(_lastKnownTargetPosition);
+            _motor.SetSpeed(RunSpeed);
+            _motor.SetSprintMode(true);
+            // Идём не в одну точку, а в свою часть области вокруг неё.
+            RefreshDestination(AreaSpreadGoal(_lastKnownTargetPosition));
 
             if (_motor.HasArrived())
             {
@@ -2975,6 +3054,9 @@ namespace ZharkoeLeto44.AI
             State = newState;
             if (DiagEnabled) _lastStateChangeReason = reason;
             CancelLookAround();
+            _areaSpreadCenter = Vector3.zero;
+            _areaSpreadOffset = Vector3.zero;
+            _nextAreaSpreadTime = 0f;
             if (newState != EnemyState.Combat)
             {
                 _fireAnchorUntil = 0f;

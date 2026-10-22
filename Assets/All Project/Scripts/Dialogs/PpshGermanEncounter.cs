@@ -66,6 +66,14 @@ public class PpshGermanEncounter : MonoBehaviour
     public Transform germanStandPoint;
     [Tooltip("Дверь, которую открывает игрок. Пусто — сцена пойдёт сразу после стука.")]
     public DoorController door;
+    [Header("Спавн через SpawnPoint")]
+    [Tooltip("true → немец появляется через точку SpawnPoint (её поднимает StorySequence_DEDA), " +
+             "этот сценарий только отрабатывает исходы диалога. false → спавн по-старому, этим сценарием.")]
+    public bool spawnViaSpawnPoint = false;
+    [Tooltip("Id точки SpawnPoint с немцем (например GermanBehindDEDA).")]
+    public string germanSpawnPointId = "";
+    [Tooltip("true → не стучать самому: удары в дверь делает StorySequence_DEDA.")]
+    public bool skipOwnKnock = false;
     [Tooltip("Через сколько секунд после подбора ППШ немец начинает идти к двери.")]
     [Min(0f)] public float knockDelay = 2f;
     [Tooltip("Сколько ждать, пока он дойдёт, прежде чем бить в дверь, сек.")]
@@ -366,15 +374,20 @@ public class PpshGermanEncounter : MonoBehaviour
         Vector3 stand = OnGround(doorPos + side * 1.7f);
         Vector3 approach = OnGround(doorPos + side * 9f);
 
-        if (germanStandPoint != null && Vector3.Distance(germanStandPoint.position, stand) > 3f)
+        // Точки «немец у двери»/«откуда идёт» двигаем только в старом режиме:
+        // в режиме SpawnPoint позицию немца задаёт сама точка на сцене.
+        if (!spawnViaSpawnPoint)
         {
-            germanStandPoint.position = stand;
-            Debug.Log($"[PpshGerman] Автопривязка: точка «Немец у двери» перенесена к двери ({stand}).", this);
-        }
-        if (germanApproachPoint != null && Vector3.Distance(germanApproachPoint.position, approach) > 8f)
-        {
-            germanApproachPoint.position = approach;
-            Debug.Log($"[PpshGerman] Автопривязка: точка «Откуда идёт немец» перенесена к двери ({approach}).", this);
+            if (germanStandPoint != null && Vector3.Distance(germanStandPoint.position, stand) > 3f)
+            {
+                germanStandPoint.position = stand;
+                Debug.Log($"[PpshGerman] Автопривязка: точка «Немец у двери» перенесена к двери ({stand}).", this);
+            }
+            if (germanApproachPoint != null && Vector3.Distance(germanApproachPoint.position, approach) > 8f)
+            {
+                germanApproachPoint.position = approach;
+                Debug.Log($"[PpshGerman] Автопривязка: точка «Откуда идёт немец» перенесена к двери ({approach}).", this);
+            }
         }
 
         if (autoMoveSpawnPoints && spawnPoints != null && spawnPoints.Length > 0)
@@ -550,6 +563,10 @@ public class PpshGermanEncounter : MonoBehaviour
 
     void Update()
     {
+        // Немец поднят через точку SpawnPoint (StorySequence_DEDA) — подхватываем
+        // ссылку, как только он появился: нужна для CanTalk/позиции свиста.
+        if (german == null && spawnViaSpawnPoint) german = ResolveSpawnedGerman();
+
         switch (Phase)
         {
             case EncounterPhase.WaitingTrigger:
@@ -601,7 +618,9 @@ public class PpshGermanEncounter : MonoBehaviour
         if (Phase != EncounterPhase.WaitingTrigger) return;
         if (oncePerScene && GameState.GetFlag(FinishedFlag)) return;
 
-        Phase = EncounterPhase.Knocking;
+        // Немца поднимает StorySequence_DEDA через точку SpawnPoint — здесь
+        // только включаем ожидание разговора: спавн и стук делает он.
+        Phase = spawnViaSpawnPoint ? EncounterPhase.WaitingDoor : EncounterPhase.Knocking;
         nextKnockTime = Time.time + Mathf.Max(0f, knockDelay);
         knocksDone = 0;
         knockStarted = false;
@@ -660,9 +679,12 @@ public class PpshGermanEncounter : MonoBehaviour
         nextKnockTime = Time.time + Mathf.Max(0.5f, knockInterval);
         knocksDone++;
 
-        PlayKnock();
-        ShakeCamera();
-        Say(knockMessage, Color.yellow);
+        if (!skipOwnKnock)
+        {
+            PlayKnock();
+            ShakeCamera();
+            Say(knockMessage, Color.yellow);
+        }
 
         // Замок снят с первого удара — игрок может открыть дверь.
         if (knocksDone == 1) UnlockDoor();
@@ -677,7 +699,9 @@ public class PpshGermanEncounter : MonoBehaviour
     bool IsDoorOpen()
     {
         if (door == null) return true; // двери нет — сцена идёт сразу
-        return door.IsOpen;
+        // Ждём конец анимации: иначе разговор начинается, пока полотно
+        // двери ещё двигается.
+        return door.IsFullyOpen;
     }
 
     void PlayKnock()
@@ -715,6 +739,13 @@ public class PpshGermanEncounter : MonoBehaviour
 
     void SpawnGerman()
     {
+        // Немца подняли через точку SpawnPoint (StorySequence_DEDA) — второго не создаём.
+        if (spawnViaSpawnPoint)
+        {
+            german = ResolveSpawnedGerman();
+            return;
+        }
+
         if (germanPrefab == null)
         {
             if (!spawnFailed)
@@ -759,6 +790,33 @@ public class PpshGermanEncounter : MonoBehaviour
 
         if (debugLogging)
             Debug.Log($"[PpshGerman] Немец идёт к двери: {approach} → {stand}.", this);
+    }
+
+    /// <summary>Уже поднятый немец из точки SpawnPoint (когда спавнит не этот сценарий).</summary>
+    GameObject ResolveSpawnedGerman()
+    {
+        if (string.IsNullOrEmpty(germanSpawnPointId)) return null;
+        if (!SpawnPointRegistry.TryGetPoint(germanSpawnPointId, out SpawnPoint point)) return null;
+
+        GameObject instance = point.SpawnedInstance;
+        if (instance == null) return null;
+
+        bool marked = instance.GetComponent<GermanStaticMarker>() != null ||
+                      instance.GetComponentInChildren<GermanStaticMarker>(true) != null;
+
+        EnemyAI ai = instance.GetComponent<EnemyAI>();
+        if (ai == null) ai = instance.GetComponentInChildren<EnemyAI>(true);
+
+        if (!marked && ai != null)
+        {
+            string message = "[PpshGerman] Prefab не настроен как visual-only: на «" + instance.name +
+                             "» есть EnemyAI и нет GermanStaticMarker. Для сцены с дверью нужен " +
+                             "статичный префаб (визуал без ИИ).";
+            if (ai.enabled) Debug.LogError(message, instance);
+            else Debug.LogWarning(message, instance);
+        }
+
+        return instance;
     }
 
     /// <summary>Откуда немец выходит — с улицы, с другой стороны двери.</summary>
@@ -823,6 +881,10 @@ public class PpshGermanEncounter : MonoBehaviour
 
     void UpdateTalking()
     {
+        // В режиме SpawnPoint разговор ведёт StorySequence_DEDA: он стартует
+        // после открытия двери. Здесь только отрабатываются исходы диалога.
+        if (spawnViaSpawnPoint) return;
+
         if (DialogueManager.Instance != null && DialogueManager.Instance.isDialogueActive) return;
         if (talked) return;
 

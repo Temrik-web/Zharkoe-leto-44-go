@@ -28,6 +28,20 @@ public class DoorController : MonoBehaviour
     public string questToCompleteOnOpen = "";
     private bool questReported = false;
 
+    [Header("Автозакрытие за игроком")]
+    [Tooltip("Один раз закрыть дверь за игроком, когда он войдёт внутрь и отвернётся от неё.")]
+    public bool autoCloseBehindPlayer = false;
+    [Tooltip("Коллайдер пола дома (FloorDEDA). Пока игрок над ним — он внутри.")]
+    public Collider autoCloseInsideArea;
+    [Tooltip("На сколько метров игрок должен зайти за дверь, чтобы это считалось входом, а не порогом.")]
+    public float autoCloseDepth = 2.5f;
+    [Tooltip("Сколько секунд игрок должен провести внутри отвернувшись, прежде чем дверь закроется.")]
+    public float autoCloseDelay = 0.35f;
+    [Tooltip("Закрывать только когда игрок смотрит в сторону от двери.")]
+    public bool autoCloseOnlyFacingAway = true;
+    [Tooltip("Угол между взглядом игрока и дверью, после которого считаем, что он отвернулся.")]
+    [Range(90f, 180f)] public float autoCloseFacingAngle = 100f;
+
     [Header("Звуки")]
     public AudioClip openSound;
     public AudioClip closeSound;
@@ -42,12 +56,20 @@ public class DoorController : MonoBehaviour
     private bool isOpen = false;
     private bool isAnimating = false;
     private bool isLookingAtDoor = false;
+    private bool autoCloseArmed = false;
+    private bool autoCloseUsed = false;
+    private Vector3 autoCloseInsideDir;
+    private float autoCloseTimer = 0f;
+    private Transform cachedPlayer;
 
     /// <summary>Дверь открылась (сценарии могут подписаться).</summary>
     public event System.Action Opened;
 
-    /// <summary>Открыта ли дверь сейчас.</summary>
+    /// <summary>Открыта ли дверь сейчас (цель открытия, даже пока полотно движется).</summary>
     public bool IsOpen => isOpen;
+
+    /// <summary>Дверь распахнулась и уже не двигается — можно начинать разговор.</summary>
+    public bool IsFullyOpen => isOpen && !isAnimating;
 
     /// <summary>Заперта ли дверь сейчас.</summary>
     public bool IsLocked => isLocked;
@@ -105,6 +127,7 @@ public class DoorController : MonoBehaviour
             if (Quaternion.Angle(transform.rotation, targetRotation) < 0.01f)
                 transform.rotation = targetRotation;
         }
+        UpdateAutoClose();
         // E во время диалога принадлежит диалогу, иначе дверь дёрнется в том же кадре.
         if (DialogueManager.Instance != null && DialogueManager.Instance.isDialogueActive)
             return;
@@ -135,6 +158,10 @@ public class DoorController : MonoBehaviour
     public void Open()
     {
         if (isAnimating || isOpen || isLocked) return;
+        // Сторону «внутри дома» запоминаем при первом открытии: игрок стоит
+        // снаружи, значит внутрь — в противоположную сторону от него.
+        if (autoCloseBehindPlayer && !autoCloseArmed && !autoCloseUsed)
+            ArmAutoClose();
         if (!questReported && !string.IsNullOrEmpty(questToCompleteOnOpen))
         {
             questReported = true;
@@ -185,15 +212,18 @@ public class DoorController : MonoBehaviour
     public bool TryUnlockWithKey()
     {
         if (!isLocked) return true;
+        if (!PlayerHasRequiredKey()) return false;
+        isLocked = false;
+        return true;
+    }
+
+    /// <summary>Есть ли нужный ключ в инвентаре (не снимая замок).</summary>
+    public bool PlayerHasRequiredKey()
+    {
         if (string.IsNullOrEmpty(requiredKeyId)) return false;
         InventorySystem inv = InventorySystem.Instance;
         if (inv == null) inv = FindObjectOfType<InventorySystem>();
-        if (inv != null && inv.HasKey(requiredKeyId))
-        {
-            isLocked = false;
-            return true;
-        }
-        return false;
+        return inv != null && inv.HasKey(requiredKeyId);
     }
 
     /// <summary>
@@ -206,6 +236,130 @@ public class DoorController : MonoBehaviour
         if (playSound) PlaySound(openSound);
         Debug.Log($"[Door] {name}: замок снят сценарием.", this);
     }
+
+    /// <summary>Запомнить, с какой стороны игрок открыл дверь: внутрь — наоборот.</summary>
+    private void ArmAutoClose()
+    {
+        Transform player = ResolvePlayer();
+        if (player == null) return;
+
+        if (autoCloseInsideArea == null)
+        {
+            // Пол дома может быть вложен в префаб и не назначен вручную —
+            // ищем по имени, которое пользователь дал объекту FloorDEDA.
+            GameObject floor = GameObject.Find("FloorDEDA");
+            if (floor != null)
+            {
+                autoCloseInsideArea = floor.GetComponent<Collider>();
+                if (autoCloseInsideArea == null)
+                    autoCloseInsideArea = floor.GetComponentInChildren<Collider>();
+            }
+        }
+
+        Vector3 toPlayer = Flat(player.position - transform.position);
+        if (toPlayer.sqrMagnitude < 0.01f) return;
+
+        autoCloseInsideDir = -toPlayer.normalized;
+        autoCloseArmed = true;
+
+        Debug.Log($"[Door] {name}: автозакрытие взведено. Пол дома: " +
+                  $"{(autoCloseInsideArea != null ? autoCloseInsideArea.name : "не найден")}.", this);
+    }
+
+    /// <summary>
+    /// Один раз закрыть дверь за игроком: он должен зайти глубоко внутрь
+    /// (не стоять на пороге) и отвернуться от двери.
+    /// </summary>
+    private void UpdateAutoClose()
+    {
+        if (!autoCloseArmed || autoCloseUsed) return;
+
+        if (DialogueManager.Instance != null && DialogueManager.Instance.isDialogueActive)
+        {
+            autoCloseTimer = 0f;
+            return;
+        }
+
+        // Закрываем только после того, как полотно доехало до конца.
+        if (!isOpen || isAnimating)
+        {
+            autoCloseTimer = 0f;
+            return;
+        }
+
+        Transform player = ResolvePlayer();
+        if (player == null)
+        {
+            autoCloseTimer = 0f;
+            return;
+        }
+
+        Vector3 toPlayer = Flat(player.position - transform.position);
+
+        // Если пол дома известен, «внутри» — это над полом. Иначе — сторона,
+        // противоположная той, откуда игрок открыл дверь.
+        bool inside;
+        if (autoCloseInsideArea != null)
+        {
+            Bounds area = autoCloseInsideArea.bounds;
+            Vector3 p = player.position;
+            inside = p.x >= area.min.x - 0.1f && p.x <= area.max.x + 0.1f &&
+                     p.z >= area.min.z - 0.1f && p.z <= area.max.z + 0.1f;
+        }
+        else
+        {
+            inside = Vector3.Dot(toPlayer, autoCloseInsideDir) >= autoCloseDepth;
+        }
+
+        // Не на пороге: игрок должен отойти от двери вглубь дома.
+        if (!inside || toPlayer.magnitude < autoCloseDepth)
+        {
+            autoCloseTimer = 0f;
+            return;
+        }
+
+        if (autoCloseOnlyFacingAway && !IsPlayerFacingAway(player))
+        {
+            autoCloseTimer = 0f;
+            return;
+        }
+
+        autoCloseTimer += Time.deltaTime;
+        if (autoCloseTimer < Mathf.Max(0f, autoCloseDelay)) return;
+
+        autoCloseUsed = true;
+        autoCloseTimer = 0f;
+        Close();
+        Debug.Log($"[Door] {name}: закрыта автоматически за вошедшим игроком.", this);
+    }
+
+    private bool IsPlayerFacingAway(Transform player)
+    {
+        Transform view = Camera.main != null ? Camera.main.transform : player;
+        Vector3 toDoor = Flat(transform.position - player.position);
+        if (toDoor.sqrMagnitude < 0.01f) return false;
+        return Vector3.Angle(view.forward, toDoor) >= autoCloseFacingAngle;
+    }
+
+    private Transform ResolvePlayer()
+    {
+        if (cachedPlayer != null) return cachedPlayer;
+
+        GameObject player = null;
+        try { player = GameObject.FindGameObjectWithTag("Player"); }
+        catch { player = null; }
+        if (player == null && Camera.main != null)
+            player = Camera.main.transform.root.gameObject;
+        if (player != null) cachedPlayer = player.transform;
+        return cachedPlayer;
+    }
+
+    private static Vector3 Flat(Vector3 v)
+    {
+        v.y = 0f;
+        return v;
+    }
+
     private void PlaySound(AudioClip clip)
     {
         if (clip != null && audioSource != null)
@@ -221,7 +375,9 @@ public class DoorController : MonoBehaviour
             GUIStyle style = new GUIStyle(GUI.skin.label);
             style.fontSize = 20;
             style.alignment = TextAnchor.MiddleCenter;
-            string text = isLocked && !string.IsNullOrEmpty(lockedHintMessage)
+            // Ключ уже в сумке — замок снимется на E, подсказка не должна
+            // отправлять игрока искать то, что у него есть.
+            string text = isLocked && !PlayerHasRequiredKey() && !string.IsNullOrEmpty(lockedHintMessage)
                 ? lockedHintMessage
                 : "Нажмите E";
             GUI.Label(new Rect(Screen.width / 2 - 160, Screen.height / 2 + 50, 320, 30), text, style);

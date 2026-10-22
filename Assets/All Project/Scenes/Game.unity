@@ -2031,12 +2031,14 @@ MonoBehaviour:
   squadDepthSpread: 3
   squadSeparationDistance: 4.5
   squadSeparationStrength: 0.8
+  squadAreaSpreadRadius: 14
   combatAnchorTolerance: 1.2
   combatRangeSlack: 5
   combatAnchorTrackSpeed: 1.5
   maxShooters: 3
   squadCommitTime: 1.5
   maneuverDistance: 10
+  repositionSpeedMultiplier: 1.5
   tacticMinTargetDistance: 6
   woundedHealthThreshold: 0.35
   woundedFireRateScale: 1.8
@@ -7260,6 +7262,12 @@ MonoBehaviour:
   autoUnlockQuestId: 
   autoUnlockQuestState: 0
   questToCompleteOnOpen: 
+  autoCloseBehindPlayer: 0
+  autoCloseInsideArea: {fileID: 0}
+  autoCloseDepth: 2.5
+  autoCloseDelay: 0.35
+  autoCloseOnlyFacingAway: 1
+  autoCloseFacingAngle: 100
   openSound: {fileID: 8300000, guid: f059971060ecaf340a74ec3733473fc4, type: 3}
   closeSound: {fileID: 8300000, guid: f46890c4327175a41839ac2e70d59817, type: 3}
   lockedSound: {fileID: 0}
@@ -8831,7 +8839,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!4 &303185284
 Transform:
   m_ObjectHideFlags: 0
@@ -9838,7 +9846,7 @@ Transform:
   m_GameObject: {fileID: 353264858}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -11.9730835, y: -0.021932779, z: -4.9961586}
+  m_LocalPosition: {x: -17.76, y: -0.021932779, z: 12.8}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -16121,12 +16129,12 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 535767112}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 6.556, y: 37.189, z: 47.418}
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: -0.805542, y: -0.07148743, z: -0.0050964355}
   m_LocalScale: {x: 0.41674, y: 0.41674, z: 0.41674}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 1397494078}
+  m_Father: {fileID: 1519129552}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!65 &535767114
 BoxCollider:
@@ -19193,6 +19201,12 @@ MonoBehaviour:
   autoUnlockQuestId: 
   autoUnlockQuestState: 0
   questToCompleteOnOpen: 
+  autoCloseBehindPlayer: 0
+  autoCloseInsideArea: {fileID: 0}
+  autoCloseDepth: 2.5
+  autoCloseDelay: 0.35
+  autoCloseOnlyFacingAway: 1
+  autoCloseFacingAngle: 100
   openSound: {fileID: 8300000, guid: f059971060ecaf340a74ec3733473fc4, type: 3}
   closeSound: {fileID: 8300000, guid: f46890c4327175a41839ac2e70d59817, type: 3}
   lockedSound: {fileID: 0}
@@ -19441,7 +19455,7 @@ Transform:
   m_GameObject: {fileID: 689212861}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -7.584175, y: 0.065798335, z: -5.2958083}
+  m_LocalPosition: {x: -5.83, y: 1.77, z: 16.97}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -20755,6 +20769,9 @@ MonoBehaviour:
   germanApproachPoint: {fileID: 789273441}
   germanStandPoint: {fileID: 1856433948}
   door: {fileID: 1803990297}
+  spawnViaSpawnPoint: 1
+  germanSpawnPointId: GermanBehindDEDA
+  skipOwnKnock: 1
   knockDelay: 2
   knockWalkTimeout: 12
   knockInterval: 2.2
@@ -20762,7 +20779,7 @@ MonoBehaviour:
   knockClip: {fileID: 0}
   knockMessage: "\u041A\u0442\u043E-\u0442\u043E \u0441\u0442\u0443\u0447\u0438\u0442
     \u0432 \u0434\u0432\u0435\u0440\u044C..."
-  unlockDoorOnKnock: 1
+  unlockDoorOnKnock: 0
   beggarStandAnimation: {fileID: 0}
   shakeOnKnock: 1
   shakeDuration: 0.22
@@ -20818,6 +20835,8 @@ Transform:
   - {fileID: 149450402}
   - {fileID: 1856433948}
   - {fileID: 1612594857}
+  - {fileID: 1999000002}
+  - {fileID: 1999000005}
   - {fileID: 1844064206}
   - {fileID: 353264859}
   - {fileID: 1336419276}
@@ -21133,6 +21152,12 @@ MonoBehaviour:
   autoUnlockQuestId: 
   autoUnlockQuestState: 0
   questToCompleteOnOpen: 
+  autoCloseBehindPlayer: 0
+  autoCloseInsideArea: {fileID: 0}
+  autoCloseDepth: 2.5
+  autoCloseDelay: 0.35
+  autoCloseOnlyFacingAway: 1
+  autoCloseFacingAngle: 100
   openSound: {fileID: 8300000, guid: f059971060ecaf340a74ec3733473fc4, type: 3}
   closeSound: {fileID: 8300000, guid: f46890c4327175a41839ac2e70d59817, type: 3}
   lockedSound: {fileID: 0}
@@ -22765,11 +22790,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: d2f6ec87121f4fe4d8b758ceb502584f, type: 3}
       propertyPath: m_LocalPosition.x
-      value: 786.069
+      value: 783.029
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: d2f6ec87121f4fe4d8b758ceb502584f, type: 3}
       propertyPath: m_LocalPosition.y
-      value: 6.31
+      value: 6.174
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: d2f6ec87121f4fe4d8b758ceb502584f, type: 3}
       propertyPath: m_LocalPosition.z
@@ -23799,12 +23824,14 @@ MonoBehaviour:
   squadDepthSpread: 3
   squadSeparationDistance: 4.5
   squadSeparationStrength: 0.8
+  squadAreaSpreadRadius: 14
   combatAnchorTolerance: 1.2
   combatRangeSlack: 5
   combatAnchorTrackSpeed: 1.5
   maxShooters: 3
   squadCommitTime: 1.5
   maneuverDistance: 10
+  repositionSpeedMultiplier: 1.5
   tacticMinTargetDistance: 6
   woundedHealthThreshold: 0.35
   woundedFireRateScale: 1.8
@@ -24088,7 +24115,7 @@ CharacterController:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Height: 1.7
+  m_Height: 3.1
   m_Radius: 0.4
   m_SlopeLimit: 45
   m_StepOffset: 0.45
@@ -24113,7 +24140,7 @@ NavMeshAgent:
   m_AutoTraverseOffMeshLink: 1
   m_AutoBraking: 1
   m_AutoRepath: 1
-  m_Height: 1.7
+  m_Height: 2.2
   m_BaseOffset: -0.12
   m_WalkableMask: 4294967295
   m_ObstacleAvoidanceType: 4
@@ -36781,7 +36808,8 @@ Transform:
   m_LocalPosition: {x: 6.5615234, y: 37.260487, z: 47.423096}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
-  m_Children: []
+  m_Children:
+  - {fileID: 1775916400}
   m_Father: {fileID: 1397494078}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!114 &1120259743
@@ -38007,12 +38035,14 @@ MonoBehaviour:
   squadDepthSpread: 3
   squadSeparationDistance: 4.5
   squadSeparationStrength: 0.8
+  squadAreaSpreadRadius: 14
   combatAnchorTolerance: 1.2
   combatRangeSlack: 5
   combatAnchorTrackSpeed: 1.5
   maxShooters: 3
   squadCommitTime: 1.5
   maneuverDistance: 10
+  repositionSpeedMultiplier: 1.5
   tacticMinTargetDistance: 6
   woundedHealthThreshold: 0.35
   woundedFireRateScale: 1.8
@@ -38967,7 +38997,7 @@ Transform:
   m_GameObject: {fileID: 1190645091}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -5.3897214, y: 0.109663896, z: -5.445633}
+  m_LocalPosition: {x: 1.47, y: 2.48, z: 16.91}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -42402,7 +42432,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 919132149155446097, guid: 7a38a34ccd1721e47acaf621e1188390, type: 3}
       propertyPath: m_Name
-      value: Floor
+      value: FloorDEDA
       objectReference: {fileID: 0}
     - target: {fileID: 919132149155446097, guid: 7a38a34ccd1721e47acaf621e1188390, type: 3}
       propertyPath: m_TagString
@@ -43123,8 +43153,6 @@ Transform:
   m_Children:
   - {fileID: 1519129552}
   - {fileID: 1120259742}
-  - {fileID: 535767113}
-  - {fileID: 1775916400}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1398806679
@@ -45303,6 +45331,12 @@ MonoBehaviour:
   autoUnlockQuestId: 
   autoUnlockQuestState: 0
   questToCompleteOnOpen: 
+  autoCloseBehindPlayer: 0
+  autoCloseInsideArea: {fileID: 0}
+  autoCloseDepth: 2.5
+  autoCloseDelay: 0.35
+  autoCloseOnlyFacingAway: 1
+  autoCloseFacingAngle: 100
   openSound: {fileID: 8300000, guid: f059971060ecaf340a74ec3733473fc4, type: 3}
   closeSound: {fileID: 8300000, guid: f46890c4327175a41839ac2e70d59817, type: 3}
   lockedSound: {fileID: 0}
@@ -47618,7 +47652,8 @@ Transform:
   m_LocalPosition: {x: 7.3615723, y: 37.260487, z: 47.423096}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
-  m_Children: []
+  m_Children:
+  - {fileID: 535767113}
   m_Father: {fileID: 1397494078}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!114 &1519129553
@@ -50470,7 +50505,7 @@ Transform:
   m_GameObject: {fileID: 1612594856}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -16.361992, y: -0.109663896, z: -4.6965094}
+  m_LocalPosition: {x: -16.361992, y: -0.109663896, z: 3.92}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -51963,12 +51998,14 @@ MonoBehaviour:
   squadDepthSpread: 3
   squadSeparationDistance: 4.5
   squadSeparationStrength: 0.8
+  squadAreaSpreadRadius: 14
   combatAnchorTolerance: 1.2
   combatRangeSlack: 5
   combatAnchorTrackSpeed: 1.5
   maxShooters: 3
   squadCommitTime: 1.5
   maneuverDistance: 10
+  repositionSpeedMultiplier: 1.5
   tacticMinTargetDistance: 6
   woundedHealthThreshold: 0.35
   woundedFireRateScale: 1.8
@@ -53889,7 +53926,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 9156347144040445544, guid: c82236c16aae9d34fbd437f8dea6e2c9, type: 3}
       propertyPath: sprintSpeed
-      value: 15
+      value: 100
       objectReference: {fileID: 0}
     - target: {fileID: 9156347144040445544, guid: c82236c16aae9d34fbd437f8dea6e2c9, type: 3}
       propertyPath: slideDuration
@@ -53953,7 +53990,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 9156347144040445546, guid: c82236c16aae9d34fbd437f8dea6e2c9, type: 3}
       propertyPath: m_LocalPosition.x
-      value: 6.4
+      value: -81.5
       objectReference: {fileID: 0}
     - target: {fileID: 9156347144040445546, guid: c82236c16aae9d34fbd437f8dea6e2c9, type: 3}
       propertyPath: m_LocalPosition.y
@@ -53961,7 +53998,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 9156347144040445546, guid: c82236c16aae9d34fbd437f8dea6e2c9, type: 3}
       propertyPath: m_LocalPosition.z
-      value: 33.84
+      value: -35.7
       objectReference: {fileID: 0}
     - target: {fileID: 9156347144040445546, guid: c82236c16aae9d34fbd437f8dea6e2c9, type: 3}
       propertyPath: m_LocalRotation.w
@@ -58599,7 +58636,7 @@ Transform:
   m_GameObject: {fileID: 1743753184}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: 0.7353391, z: -0, w: -0.6776994}
-  m_LocalPosition: {x: 6.4, y: -2.425, z: 33.84}
+  m_LocalPosition: {x: -81.5, y: -2.425, z: -35.7}
   m_LocalScale: {x: 1, y: 1.1138663, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -58884,7 +58921,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   walkSpeed: 3
-  sprintSpeed: 15
+  sprintSpeed: 100
   crouchSpeed: 1.5
   jumpSpeed: 4
   gravity: 9.7
@@ -59635,12 +59672,12 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1775916399}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 7.365, y: 37.189, z: 47.418}
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: 0.8034668, y: -0.07148743, z: -0.0050964355}
   m_LocalScale: {x: 0.41674, y: 0.41674, z: 0.41674}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 1397494078}
+  m_Father: {fileID: 1120259742}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!65 &1775916401
 BoxCollider:
@@ -61081,7 +61118,7 @@ MonoBehaviour:
   openAngle: 90
   openSpeed: 120
   closeSpeed: 100
-  interactDistance: 2
+  interactDistance: 3
   interactMask:
     serializedVersion: 2
     m_Bits: 4294967295
@@ -61090,9 +61127,15 @@ MonoBehaviour:
   requiredKeyId: cellar
   lockedHintMessage: "\u0414\u0432\u0435\u0440\u044C \u0437\u0430\u043A\u0440\u044B\u0442\u0430
     \u2014 \u043D\u0430\u0439\u0434\u0438\u0442\u0435 \u043A\u043B\u044E\u0447"
-  autoUnlockQuestId: q_cellar_door
+  autoUnlockQuestId: 
   autoUnlockQuestState: 0
-  questToCompleteOnOpen: 
+  questToCompleteOnOpen: q_cellar_door
+  autoCloseBehindPlayer: 1
+  autoCloseInsideArea: {fileID: 1097382558}
+  autoCloseDepth: 2.5
+  autoCloseDelay: 0.35
+  autoCloseOnlyFacingAway: 1
+  autoCloseFacingAngle: 100
   openSound: {fileID: 8300000, guid: f059971060ecaf340a74ec3733473fc4, type: 3}
   closeSound: {fileID: 8300000, guid: f46890c4327175a41839ac2e70d59817, type: 3}
   lockedSound: {fileID: 0}
@@ -62189,7 +62232,7 @@ Transform:
   m_GameObject: {fileID: 1844064205}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -14.167538, y: -0.065798335, z: -4.846334}
+  m_LocalPosition: {x: 3.408, y: -0.065798335, z: -4.846334}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -64594,12 +64637,14 @@ MonoBehaviour:
   squadDepthSpread: 3
   squadSeparationDistance: 4.5
   squadSeparationStrength: 0.8
+  squadAreaSpreadRadius: 14
   combatAnchorTolerance: 1.2
   combatRangeSlack: 5
   combatAnchorTrackSpeed: 1.5
   maxShooters: 3
   squadCommitTime: 1.5
   maneuverDistance: 10
+  repositionSpeedMultiplier: 1.5
   tacticMinTargetDistance: 6
   woundedHealthThreshold: 0.35
   woundedFireRateScale: 1.8
@@ -67491,6 +67536,177 @@ PrefabInstance:
       insertIndex: -1
       addedObject: {fileID: 2100313751}
   m_SourcePrefab: {fileID: 100100000, guid: b8eeee4c126cfb2469dc93565819d49f, type: 3}
+--- !u!1 &1999000001
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1999000002}
+  - component: {fileID: 1999000003}
+  m_Layer: 0
+  m_Name: SP_GermanBehindDEDA
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1999000002
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1999000001}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: 0.65494186, z: -0, w: 0.7556793}
+  m_LocalPosition: {x: -0.33, y: -0.55099964, z: 6.66}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 720241240}
+  m_LocalEulerAnglesHint: {x: 0, y: 81.83, z: 0}
+--- !u!114 &1999000003
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1999000001}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c755ea6d1a8ace542940052d1840707d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  Id: GermanBehindDEDA
+  Group: Story
+  prefab: {fileID: 8231103581635201523, guid: d30e1adf885f2014f9dd1d97c9c71eb3, type: 3}
+  sceneObject: {fileID: 0}
+  positionOffset: {x: 0, y: 0, z: 0}
+  navMeshSnap: 2.5
+  navMeshAreaMask: -3
+  facePlayerOnSpawn: 0
+  spawnEnabled: 1
+  activation: 0
+  oneShot: 1
+  eventId: 
+  triggerRadius: 1.5
+  aiState: 1
+  hideWeapon: 1
+--- !u!1 &1999000004
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1999000005}
+  - component: {fileID: 1999000006}
+  m_Layer: 0
+  m_Name: StorySequence_DEDA
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1999000005
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1999000004}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 720241240}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1999000006
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1999000004}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d4e5f60718293a4b5c6d7e8f90011223, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  triggerItemId: ppsh41
+  watchInventory: 1
+  watchInterval: 0.5
+  door: {fileID: 1803990297}
+  germanSpawnPointId: GermanBehindDEDA
+  spawnDelay: 1
+  dialogueDelay: 0
+  knockCount: 3
+  knockInterval: 0.45
+  knockClip: {fileID: 0}
+  knockSource: {fileID: 0}
+  shakeOnKnock: 1
+  shakeDuration: 0.22
+  shakeMagnitude: 0.12
+  knockMessage: "\u041A\u0442\u043E-\u0442\u043E \u0441\u0442\u0443\u0447\u0438\u0442
+    \u0432 \u0434\u0432\u0435\u0440\u044C..."
+  knockMessageColor: {r: 1, g: 0.9, b: 0.5, a: 1}
+  dialogue: {fileID: 11400000, guid: f3a7c1e9b4d24618a5c8e0f7b2d93456, type: 2}
+  dialogueResourcePath: PpshGermanEncounter/PpshGermanDialogue
+  oncePerScene: 1
+  finishedFlag: ppsh_german_encounter_finished
+--- !u!1 &1999000007
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1999000008}
+  - component: {fileID: 1999000009}
+  m_Layer: 0
+  m_Name: StepanKeyCooldown
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1999000008
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1999000007}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 787.09, y: 8.559638, z: 543.8}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1999000009
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1999000007}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e2b3c4d5f60718293a4b5c6d7e8f9001, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  stepanKeyCooldownSeconds: 60
+  triggerItemId: key_cellar
+  readyAtKey: stepan_key_ready_at
 --- !u!4 &2000088685 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 5780545108056687457, guid: 396e4e2bcb4c3374c90c240769020c51, type: 3}
@@ -68868,6 +69084,12 @@ MonoBehaviour:
   autoUnlockQuestId: 
   autoUnlockQuestState: 0
   questToCompleteOnOpen: 
+  autoCloseBehindPlayer: 0
+  autoCloseInsideArea: {fileID: 0}
+  autoCloseDepth: 2.5
+  autoCloseDelay: 0.35
+  autoCloseOnlyFacingAway: 1
+  autoCloseFacingAngle: 100
   openSound: {fileID: 8300000, guid: f059971060ecaf340a74ec3733473fc4, type: 3}
   closeSound: {fileID: 8300000, guid: f46890c4327175a41839ac2e70d59817, type: 3}
   lockedSound: {fileID: 0}
@@ -69326,6 +69548,12 @@ MonoBehaviour:
   autoUnlockQuestId: 
   autoUnlockQuestState: 0
   questToCompleteOnOpen: 
+  autoCloseBehindPlayer: 0
+  autoCloseInsideArea: {fileID: 0}
+  autoCloseDepth: 2.5
+  autoCloseDelay: 0.35
+  autoCloseOnlyFacingAway: 1
+  autoCloseFacingAngle: 100
   openSound: {fileID: 8300000, guid: f059971060ecaf340a74ec3733473fc4, type: 3}
   closeSound: {fileID: 8300000, guid: f46890c4327175a41839ac2e70d59817, type: 3}
   lockedSound: {fileID: 0}
@@ -73451,3 +73679,4 @@ SceneRoots:
   - {fileID: 849190371}
   - {fileID: 1084442000}
   - {fileID: 1777546298}
+  - {fileID: 1999000008}

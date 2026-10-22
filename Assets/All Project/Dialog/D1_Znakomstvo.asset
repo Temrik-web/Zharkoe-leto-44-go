@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: D1_Znakomstvo
   m_EditorClassIdentifier: 
   dialogueName: "\u0414\u0438\u0430\u043b\u043e\u0433 1 \u2014 \u0417\u043d\u0430\u043a\u043e\u043c\u0441\u0442\u0432\u043e"
-  description: "D1. Степан останавливает Алеся. Ветки: Минск / Лес / Грубость. SetFlag(met_stepan). Финал N_end: StartQuest(q_cart_key) — ПЕРВЫЙ квест «Найди мне ключ». Кнопка «Ключ у меня» (нужен key_cellar в сумке) → N_give: отдать ключ, Complete(q_cart_key), Start(q_cellar_door), дом за спиной."
+  description: "D1. Степан останавливает Алеся. Ветки: Минск / Лес / Грубость. SetFlag(met_stepan). Финал N_end: StartQuest(q_cart_key) — ПЕРВЫЙ квест «Найди мне ключ». Кнопка «Ключ у меня» (нужен key_cellar в сумке) → N_give_1 → N_give_2: Степан проверяет и отдаёт ключ ОБРАТНО (ключ остаётся у игрока — им открывается подвал), Complete(q_cart_key), Start(q_cellar_door). Если Степан ещё отдыхает — N_give_wait: «иди осмотрись, я отдохну», ключ отдаётся после возвращения."
   completionQuestId: q_cart_key
   nodes:
   - nodeID: N1
@@ -548,7 +548,7 @@ MonoBehaviour:
     nextNodeID: 
     speakerName: "Степан"
     speakerPortrait: {fileID: 0}
-    dialogueText: "Дом Михалыча — вон там, за плетнём. Я за ним приглядывал. Только он заперт. Слушай сюда, Алесь: ключ дед в сене на повозке прятал — она за плетнём стоит, с сеном. Найди мне этот ключ и принеси сюда. Пока ключа нет — дальше и говорить не о чем."
+    dialogueText: "Дом Михалыча — вон там, за плетнём. Я за ним приглядывал. Только подвал за домом заперт — дверь низкая, сзади. Слушай сюда, Алесь: ключ от подвала в сене на повозке лежит — она за плетнём стоит, с сеном. Найди мне этот ключ и принеси сюда. Пока ключа нет — дальше и говорить не о чем."
     voiceClip: {fileID: 0}
     textSpeed: 0
     autoAdvanceDelay: 0
@@ -571,13 +571,26 @@ MonoBehaviour:
       spriteParam: {fileID: 0}
     choices:
     - choiceText: "Ключ у меня. Держи."
-      condition: {fileID: 0}
+      condition: {fileID: 11400000, guid: a1b2c3d4e5f60718293a4b5c6d7e8f91, type: 2}
       requiredItemId: key_cellar
       requiredItemCount: 1
       requiredQuestId: 
       requiredQuestState: 1
-      nextNodeID: N_give
-      showWhenLocked: 1
+      nextNodeID: N_give_1
+      showWhenLocked: 0
+      endDialogue: 0
+      onSelectCommands: []
+      onSelected:
+        m_PersistentCalls:
+          m_Calls: []
+    - choiceText: "Степан, я нашёл ключ."
+      condition: {fileID: 11400000, guid: b1c2d3e4f5061728394a5b6c7d8e9f02, type: 2}
+      requiredItemId: key_cellar
+      requiredItemCount: 1
+      requiredQuestId: 
+      requiredQuestState: 1
+      nextNodeID: N_give_wait
+      showWhenLocked: 0
       endDialogue: 0
       onSelectCommands: []
       onSelected:
@@ -602,23 +615,73 @@ MonoBehaviour:
     onNodeExit:
       m_PersistentCalls:
         m_Calls: []
-  - nodeID: N_give
+  - nodeID: N_give_wait
     nextNodeID: 
     speakerName: "Степан"
     speakerPortrait: {fileID: 0}
-    dialogueText: "О! Давай сюда... (рассматривает) Он самый, ржавый... Михалыч его всю жизнь берёг. Молодец, Алесь, уважил старика. Слушай теперь: дом Михалыча — прямо за спиной у тебя стоит, крыльцо вон покосилось, но печь цела. Засов я с него ещё утром скинул — заходи смело, теперь там твой порядок. А ключ пусть у меня полежит — целее будет."
+    dialogueText: "Уже нашёл?.. Ловкий. Погоди, Алесь, дай дух перевести — замаялся я что-то. Иди пока по деревне пройдись, осмотрись, а я тут посижу, отдохну. Как вернёшься — покажешь."
+    voiceClip: {fileID: 0}
+    textSpeed: 0
+    autoAdvanceDelay: 0
+    onEnterCommands: []
+    choices:
+    - choiceText: "Вот ключ. Держи."
+      condition: {fileID: 11400000, guid: a1b2c3d4e5f60718293a4b5c6d7e8f91, type: 2}
+      requiredItemId: key_cellar
+      requiredItemCount: 1
+      requiredQuestId: 
+      requiredQuestState: 1
+      nextNodeID: N_give_1
+      showWhenLocked: 0
+      endDialogue: 0
+      onSelectCommands: []
+      onSelected:
+        m_PersistentCalls:
+          m_Calls: []
+    - choiceText: "Ладно, осмотрюсь."
+      condition: {fileID: 0}
+      requiredItemId: 
+      requiredItemCount: 1
+      requiredQuestId: 
+      requiredQuestState: 1
+      nextNodeID: 
+      showWhenLocked: 0
+      endDialogue: 1
+      onSelectCommands: []
+      onSelected:
+        m_PersistentCalls:
+          m_Calls: []
+    onNodeEnter:
+      m_PersistentCalls:
+        m_Calls: []
+    onNodeExit:
+      m_PersistentCalls:
+        m_Calls: []
+  - nodeID: N_give_1
+    nextNodeID: N_give_2
+    speakerName: "Степан"
+    speakerPortrait: {fileID: 0}
+    dialogueText: "Дай посмотрю... он самый."
+    voiceClip: {fileID: 0}
+    textSpeed: 0
+    autoAdvanceDelay: 1.2
+    onEnterCommands: []
+    choices: []
+    onNodeEnter:
+      m_PersistentCalls:
+        m_Calls: []
+    onNodeExit:
+      m_PersistentCalls:
+        m_Calls: []
+  - nodeID: N_give_2
+    nextNodeID: 
+    speakerName: "Степан"
+    speakerPortrait: {fileID: 0}
+    dialogueText: "Ключ-то себе оставь, Алесь: подвал-то тебе открывать. Спускайся смело — там дедов порядок."
     voiceClip: {fileID: 0}
     textSpeed: 0
     autoAdvanceDelay: 0
     onEnterCommands:
-    - type: 4
-      stringParam: key_cellar
-      boolParam: 0
-      intParam: 1
-      floatParam: 0
-      gameObjectParam: {fileID: 0}
-      clipParam: {fileID: 0}
-      spriteParam: {fileID: 0}
     - type: 12
       stringParam: q_cart_key
       boolParam: 0

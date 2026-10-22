@@ -76,12 +76,22 @@ namespace ZharkoeLeto44.AI
             selfRelative.y = 0f;
             float selfLateral = Vector3.Dot(selfRelative, right);
 
+            // Тай-брейк по id: если солдаты идут колонной (боковые координаты
+            // почти равны), ранги всё равно будут разными — иначе весь отряд
+            // получал один и тот же слот и сваливался в одну точку.
+            int selfId = self.GetInstanceID();
             int rank = 0;
             for (int i = 0; i < s_members.Count; i++)
             {
                 Vector3 relative = s_members[i].transform.position - center;
                 relative.y = 0f;
-                if (Vector3.Dot(relative, right) < selfLateral) rank++;
+                float otherLateral = Vector3.Dot(relative, right);
+
+                if (otherLateral < selfLateral - 0.05f)
+                    rank++;
+                else if (Mathf.Abs(otherLateral - selfLateral) <= 0.05f &&
+                         s_members[i].GetInstanceID() < selfId)
+                    rank++;
             }
 
             // Минимальный интервал — не меньше дистанции расхождения. Иначе при
@@ -132,6 +142,93 @@ namespace ZharkoeLeto44.AI
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// Разброс по ОБЛАСТИ, когда есть информация «игрок там» (шум, контакт,
+        /// последняя известная точка). Каждый солдат получает стабильное место
+        /// на кольце вокруг точки по хэшу id — отряд покрывает площадь, а не
+        /// встаёт кучей. Радиус растёт с числом подходящих солдат; если места
+        /// мало (стены, край NavMesh), кольцо сжимается к центру.
+        /// </summary>
+        internal static Vector3 AdjustAreaGoal(EnemyAI self, Vector3 center, float maxRadius)
+        {
+            Vector3 selfPosition = self.transform.position;
+            Vector3 selfRelative = selfPosition - center;
+            selfRelative.y = 0f;
+            if (selfRelative.sqrMagnitude < 0.25f) return center;
+
+            List<EnemyAI> soldiers = EnemyAI.RegisteredSoldiers;
+            s_members.Clear();
+            float areaTolerance = Mathf.Max(8f, maxRadius);
+
+            for (int i = 0; i < soldiers.Count; i++)
+            {
+                EnemyAI other = soldiers[i];
+                if (other == null || other == self) continue;
+                if (!other.IsSquadAlive || other.SquadTeam != self.SquadTeam) continue;
+                if (!IsAreaApproachState(other.State)) continue;
+                // Только те, кто идёт в ТУ ЖЕ область: иначе сосед из другой
+                // схватки «украдёт» слот. Дистанция до самого солдата не важна —
+                // важно, что у него та же цель, иначе кольцо делится неровно.
+                if (FlatDistance(other.KnownArea, center) > areaTolerance) continue;
+
+                s_members.Add(other);
+            }
+
+            int count = s_members.Count + 1;
+            if (count <= 1) return center;
+
+            float spacing = Mathf.Max(2.5f, self.SquadSeparationDistance);
+            float radius = spacing * count / (2f * Mathf.PI);
+            float minRadius = spacing * 0.5f;
+            radius = Mathf.Clamp(radius, minRadius, Mathf.Max(minRadius, maxRadius));
+
+            // Стабильный слот по хэшу id, а НЕ по текущим позициям: иначе
+            // якорь «крутился» бы вокруг точки, пока солдаты идут.
+            int selfId = self.GetInstanceID();
+            int selfKey = SlotHash(selfId);
+            int rank = 0;
+            for (int i = 0; i < s_members.Count; i++)
+            {
+                int otherId = s_members[i].GetInstanceID();
+                int otherKey = SlotHash(otherId);
+                if (otherKey < selfKey || (otherKey == selfKey && otherId < selfId)) rank++;
+            }
+
+            float angle = rank / (float)count * Mathf.PI * 2f;
+            Vector3 desired = center + new Vector3(Mathf.Sin(angle), 0f,
+                Mathf.Cos(angle)) * radius;
+
+            EnemyMotor motor = self.Motor;
+            if (motor == null) return desired;
+
+            // «Если хватает места»: точка должна быть достижима. Не вышло —
+            // сжимаем кольцо к центру, пока NavMesh не согласится.
+            Vector3 probe = desired;
+            for (int attempt = 0; attempt < 4; attempt++)
+            {
+                if (motor.SampleReachablePoint(probe, 4f, out Vector3 point, true))
+                    return point;
+                probe = Vector3.Lerp(probe, center, 0.5f);
+            }
+
+            return center;
+        }
+
+        private static bool IsAreaApproachState(EnemyState state) =>
+            state is EnemyState.Alert or EnemyState.Chase or EnemyState.Search;
+
+        private static int SlotHash(int id)
+        {
+            unchecked
+            {
+                uint h = (uint)id * 2654435761u;
+                h ^= h >> 15;
+                h *= 2246822519u;
+                h ^= h >> 13;
+                return (int)(h & 0x7FFFFFFF);
+            }
         }
 
         /// <summary>
