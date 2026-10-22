@@ -7268,6 +7268,7 @@ MonoBehaviour:
   autoCloseDelay: 0.35
   autoCloseOnlyFacingAway: 1
   autoCloseFacingAngle: 100
+  snapClosedOnPickupItemId: 
   openSound: {fileID: 8300000, guid: f059971060ecaf340a74ec3733473fc4, type: 3}
   closeSound: {fileID: 8300000, guid: f46890c4327175a41839ac2e70d59817, type: 3}
   lockedSound: {fileID: 0}
@@ -19207,6 +19208,7 @@ MonoBehaviour:
   autoCloseDelay: 0.35
   autoCloseOnlyFacingAway: 1
   autoCloseFacingAngle: 100
+  snapClosedOnPickupItemId: 
   openSound: {fileID: 8300000, guid: f059971060ecaf340a74ec3733473fc4, type: 3}
   closeSound: {fileID: 8300000, guid: f46890c4327175a41839ac2e70d59817, type: 3}
   lockedSound: {fileID: 0}
@@ -21158,6 +21160,7 @@ MonoBehaviour:
   autoCloseDelay: 0.35
   autoCloseOnlyFacingAway: 1
   autoCloseFacingAngle: 100
+  snapClosedOnPickupItemId: 
   openSound: {fileID: 8300000, guid: f059971060ecaf340a74ec3733473fc4, type: 3}
   closeSound: {fileID: 8300000, guid: f46890c4327175a41839ac2e70d59817, type: 3}
   lockedSound: {fileID: 0}
@@ -43146,15 +43149,15 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1397494077}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 786.0784, y: -30.459486, z: 500.387}
+  m_LocalRotation: {x: -0, y: 0.21030605, z: -0, w: 0.9776356}
+  m_LocalPosition: {x: 768.058, y: -29.814, z: 503.301}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 1519129552}
   - {fileID: 1120259742}
   m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 24.281, z: 0}
 --- !u!1 &1398806679
 GameObject:
   m_ObjectHideFlags: 0
@@ -45337,6 +45340,7 @@ MonoBehaviour:
   autoCloseDelay: 0.35
   autoCloseOnlyFacingAway: 1
   autoCloseFacingAngle: 100
+  snapClosedOnPickupItemId: 
   openSound: {fileID: 8300000, guid: f059971060ecaf340a74ec3733473fc4, type: 3}
   closeSound: {fileID: 8300000, guid: f46890c4327175a41839ac2e70d59817, type: 3}
   lockedSound: {fileID: 0}
@@ -61136,6 +61140,7 @@ MonoBehaviour:
   autoCloseDelay: 0.35
   autoCloseOnlyFacingAway: 1
   autoCloseFacingAngle: 100
+  snapClosedOnPickupItemId: rgd33
   openSound: {fileID: 8300000, guid: f059971060ecaf340a74ec3733473fc4, type: 3}
   closeSound: {fileID: 8300000, guid: f46890c4327175a41839ac2e70d59817, type: 3}
   lockedSound: {fileID: 0}
@@ -61649,43 +61654,43 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: da050f0b067f12c459e221731f728443, type: 3}
       propertyPath: m_LocalPosition.x
-      value: -0.39019775
+      value: 33.117
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: da050f0b067f12c459e221731f728443, type: 3}
       propertyPath: m_LocalPosition.y
-      value: 0.03418398
+      value: 1.2916622
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: da050f0b067f12c459e221731f728443, type: 3}
       propertyPath: m_LocalPosition.z
-      value: -2.8945312
+      value: 20.171
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: da050f0b067f12c459e221731f728443, type: 3}
       propertyPath: m_LocalRotation.w
-      value: 0.93147326
+      value: -0.23508474
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: da050f0b067f12c459e221731f728443, type: 3}
       propertyPath: m_LocalRotation.x
-      value: 0.045194265
+      value: 0.037377793
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: da050f0b067f12c459e221731f728443, type: 3}
       propertyPath: m_LocalRotation.y
-      value: 0.1241976
+      value: -0.95819163
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: da050f0b067f12c459e221731f728443, type: 3}
       propertyPath: m_LocalRotation.z
-      value: 0.33895454
+      value: 0.15876661
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: da050f0b067f12c459e221731f728443, type: 3}
       propertyPath: m_LocalEulerAnglesHint.x
-      value: 0
+      value: 16.66
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: da050f0b067f12c459e221731f728443, type: 3}
       propertyPath: m_LocalEulerAnglesHint.y
-      value: 15.189
+      value: -208.858
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: da050f0b067f12c459e221731f728443, type: 3}
       propertyPath: m_LocalEulerAnglesHint.z
-      value: 39.992
+      value: -8.783
       objectReference: {fileID: 0}
     - target: {fileID: 919132149155446097, guid: da050f0b067f12c459e221731f728443, type: 3}
       propertyPath: m_Name
@@ -69090,6 +69095,7 @@ MonoBehaviour:
   autoCloseDelay: 0.35
   autoCloseOnlyFacingAway: 1
   autoCloseFacingAngle: 100
+  snapClosedOnPickupItemId: 
   openSound: {fileID: 8300000, guid: f059971060ecaf340a74ec3733473fc4, type: 3}
   closeSound: {fileID: 8300000, guid: f46890c4327175a41839ac2e70d59817, type: 3}
   lockedSound: {fileID: 0}
@@ -69554,6 +69560,7 @@ MonoBehaviour:
   autoCloseDelay: 0.35
   autoCloseOnlyFacingAway: 1
   autoCloseFacingAngle: 100
+  snapClosedOnPickupItemId: 
   openSound: {fileID: 8300000, guid: f059971060ecaf340a74ec3733473fc4, type: 3}
   closeSound: {fileID: 8300000, guid: f46890c4327175a41839ac2e70d59817, type: 3}
   lockedSound: {fileID: 0}

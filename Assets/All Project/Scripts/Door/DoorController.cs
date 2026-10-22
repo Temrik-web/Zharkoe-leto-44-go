@@ -42,6 +42,10 @@ public class DoorController : MonoBehaviour
     [Tooltip("Угол между взглядом игрока и дверью, после которого считаем, что он отвернулся.")]
     [Range(90f, 180f)] public float autoCloseFacingAngle = 100f;
 
+    [Header("Мгновенное закрытие при подборе")]
+    [Tooltip("ID предмета, при подборе которого дверь мгновенно закрывается (например: rgd33).")]
+    public string snapClosedOnPickupItemId = "";
+
     [Header("Звуки")]
     public AudioClip openSound;
     public AudioClip closeSound;
@@ -61,6 +65,8 @@ public class DoorController : MonoBehaviour
     private Vector3 autoCloseInsideDir;
     private float autoCloseTimer = 0f;
     private Transform cachedPlayer;
+    private InventorySystem pickupInventory;
+    private Coroutine moveRoutine;
 
     /// <summary>Дверь открылась (сценарии могут подписаться).</summary>
     public event System.Action Opened;
@@ -96,10 +102,14 @@ public class DoorController : MonoBehaviour
         }
         if (physicalCollider != null)
             physicalCollider.enabled = !isOpen;
+        HookPickupEvent();
+        CloseIfPickupAlreadyOwned();
     }
 
     void Update()
     {
+        if (pickupInventory == null)
+            HookPickupEvent();
         // Замок снимается состоянием квеста, не вводом — проверка до всех return.
         if (isLocked && !string.IsNullOrEmpty(autoUnlockQuestId) &&
             DialogueManager.IsQuestStateMatch(autoUnlockQuestId, autoUnlockQuestState))
@@ -167,14 +177,14 @@ public class DoorController : MonoBehaviour
             questReported = true;
             QuestSystem.CompleteQuest(questToCompleteOnOpen);
         }
-        StartCoroutine(MoveDoor(true));
+        moveRoutine = StartCoroutine(MoveDoor(true));
         try { Opened?.Invoke(); }
         catch (System.Exception e) { Debug.LogException(e, this); }
     }
     public void Close()
     {
         if (isAnimating || !isOpen) return;
-        StartCoroutine(MoveDoor(false));
+        moveRoutine = StartCoroutine(MoveDoor(false));
     }
     private IEnumerator MoveDoor(bool opening)
     {
@@ -192,6 +202,7 @@ public class DoorController : MonoBehaviour
         {
             isAnimating = false;
             isOpen = opening;
+            moveRoutine = null;
             yield break;
         }
         float progress = 0f;
@@ -204,7 +215,73 @@ public class DoorController : MonoBehaviour
         transform.rotation = endRot;
         isOpen = opening;
         isAnimating = false;
+        moveRoutine = null;
     }
+
+    public void SnapClosed()
+    {
+        if (!isOpen && !isAnimating) return;
+
+        bool wasOpen = isOpen;
+        if (moveRoutine != null)
+        {
+            StopCoroutine(moveRoutine);
+            moveRoutine = null;
+        }
+
+        isAnimating = false;
+        isOpen = false;
+        targetRotation = closedRotation;
+        transform.rotation = closedRotation;
+        if (physicalCollider != null)
+            physicalCollider.enabled = true;
+
+        autoCloseUsed = true;
+        autoCloseTimer = 0f;
+
+        if (wasOpen)
+            PlaySound(closeSound);
+
+        Debug.Log($"[Door] {name}: дверь мгновенно закрыта после подбора '{snapClosedOnPickupItemId}'.", this);
+    }
+
+    private void HookPickupEvent()
+    {
+        if (string.IsNullOrEmpty(snapClosedOnPickupItemId) || pickupInventory != null) return;
+
+        InventorySystem inventory = InventorySystem.Instance;
+        if (inventory == null)
+            inventory = FindObjectOfType<InventorySystem>();
+        if (inventory == null) return;
+
+        pickupInventory = inventory;
+        pickupInventory.OnItemPickedUp += HandleItemPickedUp;
+    }
+
+    private void HandleItemPickedUp(ItemData item, int amount)
+    {
+        if (item == null || amount <= 0) return;
+        if (item.itemId != snapClosedOnPickupItemId) return;
+        if (isOpen || isAnimating)
+            SnapClosed();
+    }
+
+    private void CloseIfPickupAlreadyOwned()
+    {
+        if (string.IsNullOrEmpty(snapClosedOnPickupItemId)) return;
+
+        InventorySystem inventory = pickupInventory != null ? pickupInventory : InventorySystem.Instance;
+        if (inventory == null) return;
+        if (inventory.CountItemById(snapClosedOnPickupItemId) > 0 && isOpen)
+            SnapClosed();
+    }
+
+    private void OnDestroy()
+    {
+        if (pickupInventory != null)
+            pickupInventory.OnItemPickedUp -= HandleItemPickedUp;
+    }
+
     private void SetTargetRotation()
     {
         targetRotation = isOpen ? closedRotation * Quaternion.AngleAxis(openAngle, Vector3.up) : closedRotation;

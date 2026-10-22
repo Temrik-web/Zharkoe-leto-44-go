@@ -378,10 +378,13 @@ namespace ZharkoeLeto44.AI
         /// </summary>
         private float RepositionSpeed => RunSpeed * Mathf.Max(1f, repositionSpeedMultiplier);
 
-        /// <summary>Может ли солдат держать жетон атаки: есть патроны и он не ранен.</summary>
-        internal bool CanTakeFireToken =>
-            weapon != null && weapon.HasAmmunition &&
-            _health != null && _health.NormalizedHealth > woundedHealthThreshold;
+        /// <summary>
+        /// Может ли солдат держать жетон атаки: есть патроны. Раненые тоже
+        /// стреляют — у них лишь длиннее паузы (woundedFireRateScale).
+        /// Раньше раненый вообще не получал жетон и просто стоял, пока
+        /// союзники стреляют.
+        /// </summary>
+        internal bool CanTakeFireToken => weapon != null && weapon.HasAmmunition;
 
         internal void ApplySquadRole(SquadRole role, bool token)
         {
@@ -455,6 +458,10 @@ namespace ZharkoeLeto44.AI
 
         private float _lastVisibleTime;
         private float _fireAnchorUntil;
+        // Перекрытая линия огня: короткий боковой шаг, чтобы найти угол.
+        private float _repositionUntil;
+        private Vector3 _repositionGoal;
+        private bool _repositionFlip;
         private float _squadPersonalSpace;
         private Vector3 _lastPathDestination;
         private bool _hasPathDestination;
@@ -719,6 +726,9 @@ namespace ZharkoeLeto44.AI
                 _motor.SetAutoRotation(true);
             }
             _fireAnchorUntil = 0f;
+            _repositionUntil = 0f;
+            _repositionGoal = Vector3.zero;
+            _repositionFlip = false;
             _squadPersonalSpace = 0f;
             _hasCombatAnchor = false;
             _formationReady = false;
@@ -2143,26 +2153,39 @@ namespace ZharkoeLeto44.AI
             // якорь едет плавно — солдат перемещается без рывков:
             // либо чуть вперёд, либо чуть вперёд и вбок.
             Vector3 anchor = UpdateCombatAnchor(distance);
-            float anchorDistance = FlatDistance(transform.position, anchor);
 
             bool holdingFire = Time.time < _fireAnchorUntil;
+            bool repositioning = Time.time < _repositionUntil;
+            if (repositioning &&
+                FlatDistance(transform.position, _repositionGoal) <= 0.8f)
+            {
+                _repositionUntil = 0f;
+                repositioning = false;
+            }
+
+            Vector3 moveGoal = repositioning ? _repositionGoal : anchor;
+            float moveTolerance = repositioning ? 0.9f : combatAnchorTolerance;
 
             // Цель видна и мы в боевой дистанции — СТОИМ И СТРЕЛЯЕМ.
             // Якорь в этом случае заморожен (см. UpdateCombatAnchor), поэтому
             // солдат доходит до своей позиции и стоит, а не топает бесконечно
             // вперёд за уходящим якорем.
             // (visible уже посчитан выше — CanSeeCurrentTarget кеширует результат.)
-            bool holdForShot = visible && !holdingFire && WouldTurnAwayFromTarget(anchor);
+            bool holdForShot = !repositioning && visible && !holdingFire &&
+                WouldTurnAwayFromTarget(anchor);
 
             bool moving = false;
-            if (!holdingFire && !holdForShot &&
-                anchorDistance > combatAnchorTolerance)
+            bool shouldMove = repositioning
+                ? FlatDistance(transform.position, moveGoal) > moveTolerance
+                : !holdingFire && !holdForShot && FlatDistance(transform.position, moveGoal) > moveTolerance;
+
+            if (shouldMove)
             {
                 // Смена позиции — перебежкой: солдат не топает на месте, а быстро
                 // занимает своё место в строю и оттуда стреляет.
                 _motor.SetSpeed(RepositionSpeed);
                 _motor.SetSprintMode(true);
-                RefreshDestination(anchor, 1f);
+                RefreshDestination(moveGoal, 1f);
                 moving = true;
             }
             else
@@ -2245,23 +2268,36 @@ namespace ZharkoeLeto44.AI
         private void ExecuteFireRole(float distance)
         {
             Vector3 anchor = UpdateCombatAnchor(distance);
-            float anchorDistance = FlatDistance(transform.position, anchor);
 
             bool holdingFire = Time.time < _fireAnchorUntil;
+            bool repositioning = Time.time < _repositionUntil;
+            if (repositioning &&
+                FlatDistance(transform.position, _repositionGoal) <= 0.8f)
+            {
+                _repositionUntil = 0f;
+                repositioning = false;
+            }
+
+            Vector3 moveGoal = repositioning ? _repositionGoal : anchor;
+            float moveTolerance = repositioning ? 0.9f : combatAnchorTolerance;
 
             // Видимая цель в боевой дистанции — стоим и стреляем: якорь в этом
             // случае заморожен, солдат доходит до своей позиции и стоит.
             bool visible = CanSeeCurrentTarget();
-            bool holdForShot = visible && !holdingFire && WouldTurnAwayFromTarget(anchor);
+            bool holdForShot = !repositioning && visible && !holdingFire &&
+                WouldTurnAwayFromTarget(anchor);
             bool moving = false;
 
-            if (!holdingFire && !holdForShot &&
-                anchorDistance > combatAnchorTolerance)
+            bool shouldMove = repositioning
+                ? FlatDistance(transform.position, moveGoal) > moveTolerance
+                : !holdingFire && !holdForShot && FlatDistance(transform.position, moveGoal) > moveTolerance;
+
+            if (shouldMove)
             {
                 // Выход на выгодную позицию — решительной перебежкой.
                 _motor.SetSpeed(RepositionSpeed);
                 _motor.SetSprintMode(true);
-                RefreshDestination(anchor, 1f);
+                RefreshDestination(moveGoal, 1f);
                 moving = true;
             }
             else
@@ -2617,9 +2653,10 @@ namespace ZharkoeLeto44.AI
             if (!clearShot && !blockedByAlly)
             {
                 // Линию перекрыла геометрия (стена/укрытие) — стрелять нельзя.
-                // Просим отряд сменить позицию: иначе солдат молча стоит за
-                // стеной и не стреляет вообще.
+                // Не стоим столбом, пока союзники стреляют: смещаемся вбок,
+                // ищем угол для выстрела.
                 WantsReposition = true;
+                RequestFireReposition();
                 return;
             }
 
@@ -2654,6 +2691,34 @@ namespace ZharkoeLeto44.AI
                     _nextBurstTime = Time.time + pause;
                 }
             }
+        }
+
+        /// <summary>
+        /// Короткий боковой шаг при перекрытой линии огня (стена, укрытие).
+        /// Сторона чередуется: если справа тоже глухо — следующий шаг влево.
+        /// Так солдат за укрытием не стоит и не смотрит вперёд, пока
+        /// союзники стреляют, а ищет угол.
+        /// </summary>
+        private void RequestFireReposition()
+        {
+            if (Time.time < _repositionUntil) return;
+            if (_target == null) return;
+
+            Vector3 toTarget = _target.position - transform.position;
+            toTarget.y = 0f;
+            if (toTarget.sqrMagnitude < 0.01f) return;
+
+            Vector3 right = Vector3.Cross(Vector3.up, toTarget.normalized);
+            _repositionFlip = !_repositionFlip;
+            float side = _repositionFlip ? 1f : -1f;
+            float step = Mathf.Clamp(squadSeparationDistance, 3f, 8f);
+            Vector3 desired = transform.position + right * (side * step);
+
+            if (!_motor.SampleReachablePoint(desired, step, out Vector3 point, true))
+                return;
+
+            _repositionGoal = point;
+            _repositionUntil = Time.time + 2f;
         }
 
         /// <summary>
@@ -2852,11 +2917,16 @@ namespace ZharkoeLeto44.AI
                 ChangeState(EnemyState.Alert);
         }
 
-        /// <summary>Приём контакта от союзника: цель и точка, с задержкой.</summary>
+        /// <summary>
+        /// Приём контакта от союзника: цель и точка, с задержкой.
+        /// Контакт принимают все, кроме тех, кто УЖЕ дерётся с видимой целью:
+        /// раньше солдат с любой (даже потерянной) целью игнорировал радио
+        /// и продолжал стоять/искать, пока союзники стреляли по игроку.
+        /// </summary>
         private void ReceiveContact(Transform target, Vector3 point)
         {
             if (target == null) return;
-            if (_target != null) return;   // своя цель важнее
+            if (State == EnemyState.Combat && CanSeeCurrentTarget()) return;
 
             // Задержка короткая: товарищ уже стреляет — ждать нечего.
             float min = Mathf.Min(contactShareDelay.x, contactShareDelay.y) * contactShareDelayScale;
@@ -2874,6 +2944,13 @@ namespace ZharkoeLeto44.AI
             if (Time.time < _pendingContactTime) return;
 
             _pendingContactTime = float.NegativeInfinity;
+            // Пока ждали задержку, цель могла стать видимой — тогда не дёргаем
+            // солдата из боя в погоню, он и так уже дерётся.
+            if (State == EnemyState.Combat && CanSeeCurrentTarget())
+            {
+                _pendingContactTarget = null;
+                return;
+            }
             if (_target == null && _pendingContactTarget != null)
                 SetTarget(_pendingContactTarget);
 
@@ -3060,6 +3137,7 @@ namespace ZharkoeLeto44.AI
             if (newState != EnemyState.Combat)
             {
                 _fireAnchorUntil = 0f;
+                _repositionUntil = 0f;
                 _hasCombatAnchor = false;
                 _formationReady = false;
             }
