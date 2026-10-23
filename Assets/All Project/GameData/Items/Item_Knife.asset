@@ -16,7 +16,7 @@ MonoBehaviour:
   itemName: "\u041D\u043E\u0436"
   description: "\u041F\u0440\u043E\u0441\u0442\u043E\u0439 \u043E\u043A\u043E\u043F\u043D\u044B\u0439
     \u043D\u043E\u0436. \u0422\u0438\u0445\u043E \u0438 \u043D\u0430\u0432\u0435\u0440\u043D\u044F\u043A\u0430."
-  icon: {fileID: 151954773, guid: 55148d49f3b3a0349996765e297c6701, type: 3}
+  icon: {fileID: 381648328, guid: 740a93e5f68294d40bcff64aa44e9c6a, type: 3}
   stackable: 0
   maxStack: 1
   itemType: 1

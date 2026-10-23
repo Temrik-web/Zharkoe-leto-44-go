@@ -18,7 +18,7 @@ MonoBehaviour:
     \u0441 \u0442\u0451\u043F\u043B\u044B\u043C \u0436\u0451\u043B\u0442\u044B\u043C
     \u0441\u0432\u0435\u0442\u043E\u043C. \u0412\u043A\u043B\u044E\u0447\u0430\u0435\u0442\u0441\u044F
     \u043A\u043B\u0430\u0432\u0438\u0448\u0435\u0439 F."
-  icon: {fileID: -817141694, guid: 55148d49f3b3a0349996765e297c6701, type: 3}
+  icon: {fileID: 1953105509, guid: 740a93e5f68294d40bcff64aa44e9c6a, type: 3}
   stackable: 0
   maxStack: 1
   itemType: 0
